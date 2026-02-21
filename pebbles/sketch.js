@@ -241,3 +241,4 @@ function windowResized() {
   resizeCanvas(windowWidth, windowHeight);
   startCluster();
 }
+

@@ -1,22 +1,75 @@
 # Huahua
 
-## One-line Summary
-Huahua is a tiny hobby app where you open a page and watch random doodles get drawn.
-
-## Overview
-Huahua is made for one thing: fun.
-No account, no setup, no goals.
-Just open the page and enjoy the doodles.
-
-## Simple as 1, 2, 3
-1. Open the page.
-2. Watch Huahua draw random doodles.
-3. Smile, refresh, repeat.
+Huahua is a tiny hobby sketch. Open a page and watch pebbles get drawn.
 
 ## What It Does
-- Draws random doodles automatically
-- Keeps running so you can just watch
-- Stays lightweight and playful
+- A cluster of pebble-like shapes grows from the center outward
+- Pebbles never overlap and try to touch as much as possible
+- Each pebble is traced first (pencil-like outline), then filled
+- The sketch stops when the screen is full
+- Click to restart
+
+## Tech Stack
+- Frontend: `HTML` + `CSS` + `JavaScript`
+- Drawing: `p5.js` (loaded via CDN)
+- Hosting: GitHub Pages (static site, no backend)
+
+## How It Works (MVP)
+- Everything runs in the browser
+- No backend, no database, no accounts
+- State is ephemeral (refresh or click to restart)
+
+## Sketches (Code + Docs Pairs)
+Each sketch lives in its own folder and comes as a pair:
+- `/<sketch-name>/sketch.js`: runnable `p5.js` sketch code
+- `/<sketch-name>/sketch.md`: what is drawn, explained as description + code pairs
+
+Current sketch:
+- `pebbles/sketch.js`
+- `pebbles/sketch.md`
+
+## Project Layout
+- `index.html`: loads `p5.js` and the current sketch
+- `styles.css`: full-screen canvas styling
+- `pebbles/`: the current sketch folder
+
+## Run Locally
+Option A: open `index.html` in a browser.
+
+Option B: serve the folder and open the local URL.
+Example:
+```bash
+python3 -m http.server 8000
+```
+
+## Deploy To GitHub Pages
+1. Push to GitHub (default branch `main`).
+2. In repo settings: `Settings` -> `Pages`.
+3. Set source to deploy from branch `main` and folder `/ (root)`.
+4. Visit the published URL.
+
+## Development Guidelines
+- Keep the MVP simple and hobby-friendly
+- Prefer small, safe, incremental changes over rewrites
+- Keep dependencies minimal and frontend-first
+- Avoid adding a backend or persistence unless a feature truly requires it
+- Preserve the core UX: open the page and watch the sketch draw
+- Use clear names and straightforward control flow
+- Add comments only when the intent is not obvious
+- Validate changes quickly (manual check is fine for MVP) and note what you tested
+
+## Adding A New Sketch
+- Create a new folder `/<sketch-name>/`.
+- Add `sketch.js` and `sketch.md` in that folder.
+- Point `index.html` at the new `/<sketch-name>/sketch.js`.
+
+## Contributing
+Small, focused improvements are welcome.
+If you change behavior, keep it aligned with the "watch it draw" vibe and keep the stack simple.
+Include a short note on what changed and how you validated it.
+
+## License
+No license file yet. If you plan to share or accept contributions, add one (MIT is a common default).
 
 ## Status
 Hobby project. Early and evolving.
