@@ -1,0 +1,6 @@
+- create a doodle description and connect with the code so in the future ai can create new doodles from examples
+- add speed selector to doodle
+- enable skipping steps for casually watching how a doodle is created
+- add inspiration reference for insta account / post
+- smooth the edges of the pebble and make them touch eachothet
+- seems like a good idea to first improve every prompt then submit the promtp
