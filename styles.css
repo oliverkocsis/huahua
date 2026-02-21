@@ -92,6 +92,50 @@ canvas {
   pointer-events: auto;
 }
 
+.main-sketch-switch {
+  left: clamp(0.75rem, 2.5vw, 1.6rem);
+  top: clamp(0.75rem, 2.5vw, 1.4rem);
+  right: auto;
+  bottom: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.42rem;
+  padding: 0.34rem 0.48rem 0.34rem 0.55rem;
+  border-radius: 999px;
+  background: var(--control-bg);
+  border: 1px solid var(--control-border);
+  backdrop-filter: blur(8px);
+}
+
+.sketch-label {
+  font-family: "Avenir Next", "Segoe UI", sans-serif;
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--control-text);
+}
+
+.sketch-select {
+  border: 0;
+  border-radius: 999px;
+  background: var(--control-idle);
+  color: var(--control-text);
+  height: 1.95rem;
+  min-width: 8.5rem;
+  padding: 0 0.85rem;
+  font-family: "Avenir Next", "Segoe UI", sans-serif;
+  font-size: 0.84rem;
+  font-weight: 600;
+  line-height: 1;
+  cursor: pointer;
+  appearance: none;
+}
+
+.sketch-select:focus-visible {
+  outline: 2px solid var(--control-active);
+  outline-offset: 1px;
+}
+
 .speed-control {
   display: inline-flex;
   align-items: center;
@@ -163,6 +207,26 @@ canvas {
   .main-controls {
     right: clamp(0.65rem, 2.4vw, 1.2rem);
     bottom: clamp(0.65rem, 2.4vw, 1.2rem);
+  }
+
+  .main-sketch-switch {
+    left: clamp(0.65rem, 2.4vw, 1.2rem);
+    top: clamp(0.65rem, 2.4vw, 1.2rem);
+    right: auto;
+    bottom: auto;
+    padding: 0.3rem 0.42rem 0.3rem 0.48rem;
+    gap: 0.34rem;
+  }
+
+  .sketch-label {
+    font-size: 0.68rem;
+  }
+
+  .sketch-select {
+    height: 1.85rem;
+    min-width: 7.5rem;
+    font-size: 0.8rem;
+    padding: 0 0.72rem;
   }
 
   .speed-control {

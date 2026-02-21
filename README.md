@@ -6,6 +6,7 @@ Huahua is a tiny hobby sketch. Open a page and watch pebbles get drawn.
 - A cluster of pebble-like shapes grows from the center outward
 - Pebbles never overlap and try to touch as much as possible
 - Each pebble is traced first (pencil-like outline), then filled
+- Top-left sketch switcher to choose between available sketches
 - Main app speed control in the bottom-right (`1x`, `2x`, `4x`)
 - The sketch stops when the screen is full
 - Click to restart
@@ -25,15 +26,19 @@ Each sketch lives in its own folder and comes as a pair:
 - `/<sketch-name>/sketch.js`: runnable `p5.js` sketch code
 - `/<sketch-name>/sketch.md`: what is drawn, explained as description + code pairs
 
-Current sketch:
-- `pebbles/sketch.js`
-- `pebbles/sketch.md`
+Available sketches:
+- `mondriaan/sketch.js` + `mondriaan/sketch.md`
+- `pebbles/sketch.js` + `pebbles/sketch.md`
+
+Default sketch:
+- `mondriaan` (you can switch from the top-left selector)
 
 ## Project Layout
-- `index.html`: loads `p5.js` and the current sketch
-- `app.js`: main app UI and global speed control state
+- `index.html`: loads `p5.js` and the main UI containers
+- `app.js`: main app UI, sketch switcher, and selected sketch loader
 - `styles.css`: full-screen canvas styling
-- `pebbles/`: the current sketch folder
+- `mondriaan/`: sketch folder
+- `pebbles/`: sketch folder
 
 ## Credits Overlay
 - Bottom-left title/credit is owned by the main app, not the sketch.
@@ -63,6 +68,9 @@ python3 -m http.server 8000
 - Keep dependencies minimal and frontend-first
 - Avoid adding a backend or persistence unless a feature truly requires it
 - Preserve the core UX: open the page and watch the sketch draw
+- For line-based sketches, `1x` speed must look hand-drawn by progressively revealing lines over time
+- Do not instantly render full lines at `1x`
+- Do not use fake hand/pencil overlays; only animate the line drawing itself
 - Use clear names and straightforward control flow
 - Add comments only when the intent is not obvious
 - Validate changes quickly (manual check is fine for MVP) and note what you tested
@@ -70,8 +78,9 @@ python3 -m http.server 8000
 ## Adding A New Sketch
 - Create a new folder `/<sketch-name>/`.
 - Add `sketch.js` and `sketch.md` in that folder.
-- Point `index.html` at the new `/<sketch-name>/sketch.js`.
+- Register the sketch in `app.js` (`SKETCHES` list: `id`, `label`, `script`, `pageTitle`).
 - Define `sketchCredits` in `/<sketch-name>/sketch.js` with the sketch title, author handle, and original source URL.
+- If the sketch draws lines, implement progressive line drawing at `1x` so it feels like a person is drawing.
 
 ## Contributing
 Small, focused improvements are welcome.

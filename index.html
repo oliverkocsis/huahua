@@ -3,11 +3,15 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Huahua Pebbles</title>
+    <title>Huahua Mondriaan</title>
     <link rel="stylesheet" href="./styles.css" />
     <script src="https://cdn.jsdelivr.net/npm/p5@1.9.4/lib/p5.min.js"></script>
   </head>
   <body>
+    <aside class="main-controls main-sketch-switch" aria-label="Sketch selector">
+      <label class="sketch-label" for="sketch-select">Sketch</label>
+      <select class="sketch-select" id="sketch-select"></select>
+    </aside>
     <aside class="main-credit" aria-label="Drawing credit">
       <p class="credit-title">Now Drawing</p>
       <p class="credit-author"></p>
@@ -25,6 +29,5 @@
       </div>
     </aside>
     <script src="./app.js"></script>
-    <script src="./pebbles/sketch.js"></script>
   </body>
 </html>
