@@ -13,6 +13,47 @@
   const authorElement = document.querySelector(".credit-author");
   const urlElement = document.querySelector(".credit-url");
   const appState = { speed: 1, sketch: DEFAULT_SKETCH_ID };
+  const SPEED_PROFILES = {
+    1: {
+      drawDistanceMin: 8,
+      drawDistanceScale: 0.02,
+      drawIncrementMultiplier: 0.5,
+      placementFrameInterval: 3,
+      distanceBurstChance: 0,
+      distanceBurstMin: 0,
+      distanceBurstScaleMin: 0,
+      distanceBurstScaleMax: 0,
+      incrementBurstChance: 0,
+      incrementBurstMultiplierMin: 0,
+      incrementBurstMultiplierMax: 0,
+    },
+    2: {
+      drawDistanceMin: 24,
+      drawDistanceScale: 0.055,
+      drawIncrementMultiplier: 2,
+      placementFrameInterval: 1,
+      distanceBurstChance: 0,
+      distanceBurstMin: 0,
+      distanceBurstScaleMin: 0,
+      distanceBurstScaleMax: 0,
+      incrementBurstChance: 0,
+      incrementBurstMultiplierMin: 0,
+      incrementBurstMultiplierMax: 0,
+    },
+    4: {
+      drawDistanceMin: 54,
+      drawDistanceScale: 0.12,
+      drawIncrementMultiplier: 4,
+      placementFrameInterval: 1,
+      distanceBurstChance: 0.35,
+      distanceBurstMin: 28,
+      distanceBurstScaleMin: 0.08,
+      distanceBurstScaleMax: 0.2,
+      incrementBurstChance: 0.5,
+      incrementBurstMultiplierMin: 10,
+      incrementBurstMultiplierMax: 50,
+    },
+  };
   const mobileSpeedQuery = window.matchMedia("(max-width: 720px)");
   const activeSketch = getSketchFromUrl();
 
@@ -88,6 +129,44 @@
     return null;
   }
 
+  function getSpeedMode() {
+    const speed = appState.speed;
+    if (speed === 2 || speed === 4) return speed;
+    return 1;
+  }
+
+  function getSpeedProfile() {
+    return SPEED_PROFILES[getSpeedMode()] || SPEED_PROFILES[1];
+  }
+
+  function getDrawDistancePerFrame(scale) {
+    const profile = getSpeedProfile();
+    let distance = Math.max(profile.drawDistanceMin, scale * profile.drawDistanceScale);
+    if (Math.random() < profile.distanceBurstChance) {
+      const burstScale = scale * (profile.distanceBurstScaleMin + Math.random() * (profile.distanceBurstScaleMax - profile.distanceBurstScaleMin));
+      distance += Math.max(profile.distanceBurstMin, burstScale);
+    }
+    return distance;
+  }
+
+  function getStrokeIncrement(baseIncrement) {
+    const profile = getSpeedProfile();
+    let increment = baseIncrement * profile.drawIncrementMultiplier;
+    if (Math.random() < profile.incrementBurstChance) {
+      const burstMultiplier =
+        profile.incrementBurstMultiplierMin +
+        Math.random() * (profile.incrementBurstMultiplierMax - profile.incrementBurstMultiplierMin);
+      increment += baseIncrement * burstMultiplier;
+    }
+    return increment;
+  }
+
+  function shouldSkipPlacementFrame(frameIndex) {
+    const profile = getSpeedProfile();
+    if (profile.placementFrameInterval <= 1) return false;
+    return frameIndex % profile.placementFrameInterval !== 0;
+  }
+
   function getSketchFromUrl() {
     const params = new URLSearchParams(window.location.search);
     return getSketchById(params.get("sketch")) || getSketchById(DEFAULT_SKETCH_ID);
@@ -146,6 +225,11 @@
   }
 
   window.HUAHUA_APP = appState;
+  appState.getSpeedMode = getSpeedMode;
+  appState.getSpeedProfile = getSpeedProfile;
+  appState.getDrawDistancePerFrame = getDrawDistancePerFrame;
+  appState.getStrokeIncrement = getStrokeIncrement;
+  appState.shouldSkipPlacementFrame = shouldSkipPlacementFrame;
   appState.setCredits = (creditsOrTitle, author, sourceUrl) => {
     if (typeof creditsOrTitle === "object" && creditsOrTitle !== null) {
       setCredits(creditsOrTitle.title || "", creditsOrTitle.author || "", creditsOrTitle.url || "");

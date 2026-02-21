@@ -16,10 +16,12 @@ const COMPOSITION_MARGIN_MAX = 96;
 const FILL_ANGLE_MIN_DEGREES = -60;
 const FILL_ANGLE_MAX_DEGREES = -30;
 const FILL_STROKE_WEIGHT_MULTIPLIER = 2.4;
-const FILL_SPACING_MIN_PX = 1.8;
-const FILL_SPACING_MAX_PX = 3.2;
-const FILL_SPACING_MIN_SCALE = 0.0022;
-const FILL_SPACING_MAX_SCALE = 0.0040;
+const FILL_SPACING_MIN_PX = 2.8;
+const FILL_SPACING_MAX_PX = 4.8;
+const FILL_SPACING_MIN_SCALE = 0.0032;
+const FILL_SPACING_MAX_SCALE = 0.0058;
+const PIXEL_STEP_DISTANCE = 2;
+const HUMAN_PIXEL_STEPS_PER_FRAME = 4;
 const WHITE_RECTANGLE_PROBABILITY = 0.40;
 const BLACK_FILL_PROBABILITY = 0.05;
 const WHITE_FILL_COLOR = [250, 249, 245, 230];
@@ -62,13 +64,16 @@ function setup() {
 function draw() {
   if (isComplete) return;
 
+  const isHumanSpeed = getMainSpeedMode() === 1;
   let remainingDistance = getDrawDistancePerFrame();
+  if (isHumanSpeed) remainingDistance = min(remainingDistance, PIXEL_STEP_DISTANCE * HUMAN_PIXEL_STEPS_PER_FRAME);
 
   while (remainingDistance > 0) {
     if (drawPhase === "outlines") {
-      const outlineConsumed = drawNextOutlineDistance(remainingDistance);
+      const outlineConsumed = drawNextOutlineDistance(remainingDistance, isHumanSpeed);
       if (outlineConsumed > 0) {
         remainingDistance -= outlineConsumed;
+        if (isHumanSpeed) break;
         continue;
       }
       drawPhase = "fills";
@@ -78,9 +83,10 @@ function draw() {
     if (currentRectangleIndex >= mondrianRectangles.length) break;
 
     const section = mondrianRectangles[currentRectangleIndex];
-    const consumed = drawNextStrokeDistance(section, remainingDistance);
+    const consumed = drawNextStrokeDistance(section, remainingDistance, isHumanSpeed);
     if (consumed > 0) {
       remainingDistance -= consumed;
+      if (isHumanSpeed) break;
     } else {
       currentRectangleIndex += 1;
     }
@@ -393,7 +399,7 @@ function pickRectangleFillStyle() {
   return { fillColor: base.slice(), skipFill: false };
 }
 
-function drawNextStrokeDistance(section, distanceBudget) {
+function drawNextStrokeDistance(section, distanceBudget, singleSegmentMode) {
   if (section.currentLineIndex >= section.lines.length) return 0;
 
   let consumed = 0;
@@ -415,7 +421,7 @@ function drawNextStrokeDistance(section, distanceBudget) {
       continue;
     }
 
-    const step = min(remainingOnLine, distanceBudget);
+    const step = min(remainingOnLine, distanceBudget, PIXEL_STEP_DISTANCE);
     const nextProgress = section.currentLineProgress + step;
     stroke(
       constrain(section.fillColor[0] + random(-8, 8), 0, 255),
@@ -432,6 +438,7 @@ function drawNextStrokeDistance(section, distanceBudget) {
     if (section.currentLineProgress >= segmentLength - 0.001) {
       section.currentLineIndex += 1;
       section.currentLineProgress = 0;
+      if (singleSegmentMode) break;
     }
   }
 
@@ -450,7 +457,7 @@ function drawSegmentPortion(segment, fromDistance, toDistance) {
   line(x1, y1, x2, y2);
 }
 
-function drawNextOutlineDistance(distanceBudget) {
+function drawNextOutlineDistance(distanceBudget, singleSegmentMode) {
   if (currentOutlineIndex >= outlineSegments.length) return 0;
 
   let consumed = 0;
@@ -474,7 +481,7 @@ function drawNextOutlineDistance(distanceBudget) {
       continue;
     }
 
-    const step = min(remainingOnSegment, distanceBudget);
+    const step = min(remainingOnSegment, distanceBudget, PIXEL_STEP_DISTANCE);
     const nextProgress = currentOutlineProgress + step;
     strokeWeight(max(1.2, borderWeight + random(-0.25, 0.25)));
     drawSegmentPortion(segment, currentOutlineProgress, nextProgress);
@@ -485,6 +492,7 @@ function drawNextOutlineDistance(distanceBudget) {
     if (currentOutlineProgress >= segmentLength - 0.001) {
       currentOutlineIndex += 1;
       currentOutlineProgress = 0;
+      if (singleSegmentMode) break;
     }
   }
 
@@ -522,6 +530,9 @@ function shuffleValues(values) {
 }
 
 function getMainSpeedMode() {
+  if (window.HUAHUA_APP && typeof window.HUAHUA_APP.getSpeedMode === "function") {
+    return window.HUAHUA_APP.getSpeedMode();
+  }
   if (!window.HUAHUA_APP || !Number.isFinite(window.HUAHUA_APP.speed)) return 1;
   const speed = window.HUAHUA_APP.speed;
   if (speed === 2 || speed === 4) return speed;
@@ -529,11 +540,14 @@ function getMainSpeedMode() {
 }
 
 function getDrawDistancePerFrame() {
-  const speedMode = getMainSpeedMode();
   const scale = min(width, height);
+  if (window.HUAHUA_APP && typeof window.HUAHUA_APP.getDrawDistancePerFrame === "function") {
+    return window.HUAHUA_APP.getDrawDistancePerFrame(scale);
+  }
+
+  const speedMode = getMainSpeedMode();
   if (speedMode === 1) return max(8, scale * 0.02);
   if (speedMode === 2) return max(24, scale * 0.055);
-
   let burst = max(54, scale * 0.12);
   if (random() < 0.35) burst += max(28, scale * random(0.08, 0.2));
   return burst;

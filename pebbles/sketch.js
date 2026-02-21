@@ -36,9 +36,7 @@ function draw() {
 
   if (isFull) return;
 
-  const speedMode = getMainSpeedMode();
-  // Keep 1x slower/human-like; 2x/4x place new pebbles every frame.
-  if (speedMode === 1 && frameCount % 3 !== 0) return;
+  if (shouldSkipPlacementFrame(frameCount)) return;
 
   const next = findNextPebble();
   if (!next) {
@@ -300,13 +298,26 @@ function calculatePackingRadius(points) {
 }
 
 function getMainSpeedMode() {
+  if (window.HUAHUA_APP && typeof window.HUAHUA_APP.getSpeedMode === "function") {
+    return window.HUAHUA_APP.getSpeedMode();
+  }
   if (!window.HUAHUA_APP || !Number.isFinite(window.HUAHUA_APP.speed)) return 1;
   const speed = window.HUAHUA_APP.speed;
   if (speed === 2 || speed === 4) return speed;
   return 1;
 }
 
+function shouldSkipPlacementFrame(frameIndex) {
+  if (window.HUAHUA_APP && typeof window.HUAHUA_APP.shouldSkipPlacementFrame === "function") {
+    return window.HUAHUA_APP.shouldSkipPlacementFrame(frameIndex);
+  }
+  return getMainSpeedMode() === 1 && frameIndex % 3 !== 0;
+}
+
 function getSpeedAdjustedIncrement(baseIncrement) {
+  if (window.HUAHUA_APP && typeof window.HUAHUA_APP.getStrokeIncrement === "function") {
+    return window.HUAHUA_APP.getStrokeIncrement(baseIncrement);
+  }
   const speedMode = getMainSpeedMode();
   if (speedMode === 1) return baseIncrement * 0.5;
   if (speedMode === 2) return baseIncrement * 2;
