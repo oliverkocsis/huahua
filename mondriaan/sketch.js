@@ -14,6 +14,10 @@ const COMPOSITION_MARGIN_RATIO = 0.06;
 const COMPOSITION_MARGIN_MIN = 32;
 const COMPOSITION_MARGIN_MAX = 96;
 const ANGLE_OPTIONS = [0, 15, 30, 45, 60, 75, 90];
+const HATCH_SPACING_MIN_PX = 2;
+const HATCH_SPACING_MAX_PX = 5;
+const HATCH_SPACING_MIN_SCALE = 0.004;
+const HATCH_SPACING_MAX_SCALE = 0.008;
 const BG_COLOR = [246, 244, 238];
 const GRID_COLOR = [24, 24, 24, 230];
 const HATCH_COLOR = [16, 16, 16, 170];
@@ -237,8 +241,8 @@ function createSegment(x1, y1, x2, y2) {
 function getSpacingBounds() {
   const scale = min(width, height);
   return {
-    min: max(4.5, scale * 0.0065),
-    max: max(8, scale * 0.016),
+    min: max(HATCH_SPACING_MIN_PX, scale * HATCH_SPACING_MIN_SCALE),
+    max: max(HATCH_SPACING_MAX_PX, scale * HATCH_SPACING_MAX_SCALE),
   };
 }
 
