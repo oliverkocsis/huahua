@@ -13,14 +13,34 @@ const RECT_RATIO_MAX = 2.00;
 const COMPOSITION_MARGIN_RATIO = 0.06;
 const COMPOSITION_MARGIN_MIN = 32;
 const COMPOSITION_MARGIN_MAX = 96;
-const ANGLE_OPTIONS = [0, 15, 30, 45, 60, 75, 90];
-const HATCH_SPACING_MIN_PX = 2;
-const HATCH_SPACING_MAX_PX = 5;
-const HATCH_SPACING_MIN_SCALE = 0.004;
-const HATCH_SPACING_MAX_SCALE = 0.008;
+const FILL_ANGLE_MIN_DEGREES = -60;
+const FILL_ANGLE_MAX_DEGREES = -30;
+const FILL_STROKE_WEIGHT_MULTIPLIER = 2.4;
+const FILL_SPACING_MIN_PX = 1.8;
+const FILL_SPACING_MAX_PX = 3.2;
+const FILL_SPACING_MIN_SCALE = 0.0022;
+const FILL_SPACING_MAX_SCALE = 0.0040;
+const WHITE_RECTANGLE_PROBABILITY = 0.40;
+const BLACK_FILL_PROBABILITY = 0.05;
+const WHITE_FILL_COLOR = [250, 249, 245, 230];
+const BLACK_FILL_COLOR = [20, 20, 20, 235];
 const BG_COLOR = [246, 244, 238];
 const GRID_COLOR = [24, 24, 24, 230];
-const HATCH_COLOR = [16, 16, 16, 170];
+const RED_PASTEL_SHADES = [
+  [238, 122, 114],
+  [232, 108, 102],
+  [246, 136, 126],
+];
+const YELLOW_PASTEL_SHADES = [
+  [245, 214, 104],
+  [250, 222, 118],
+  [239, 204, 92],
+];
+const BLUE_PASTEL_SHADES = [
+  [128, 172, 236],
+  [117, 163, 229],
+  [141, 184, 242],
+];
 
 let mondrianRectangles = [];
 let currentRectangleIndex = 0;
@@ -31,6 +51,7 @@ let currentOutlineIndex = 0;
 let currentOutlineProgress = 0;
 let drawPhase = "outlines";
 let isComplete = false;
+let sketchFillPalette = [];
 
 function setup() {
   createCanvas(windowWidth, windowHeight);
@@ -75,7 +96,12 @@ function buildMondrianComposition() {
   background(...BG_COLOR);
   fillerLineWeight = constrain(min(width, height) * 0.0018, 0.8, 1.4);
   borderWeight = fillerLineWeight * 4;
+  sketchFillPalette = buildSketchFillPalette();
   mondrianRectangles = generateMondrianRectangles().map((section) => createFillPlan(section));
+  mondrianRectangles.sort((a, b) => {
+    if (abs(a.y - b.y) > 0.5) return a.y - b.y;
+    return a.x - b.x;
+  });
   outlineSegments = createOutlineSegments(mondrianRectangles);
   currentOutlineIndex = 0;
   currentOutlineProgress = 0;
@@ -202,15 +228,17 @@ function createFallbackGrid(bounds) {
 
 function createFillPlan(section) {
   const inset = borderWeight * 0.7;
-  const spacingBounds = getSpacingBounds();
-  const angleDegrees = random(ANGLE_OPTIONS);
+  const fillStyle = pickRectangleFillStyle();
+  const spacingBounds = getFillSpacingBounds();
   const lineSpacing = random(spacingBounds.min, spacingBounds.max);
-  const lines = createHatchLines(section, radians(angleDegrees), lineSpacing, inset);
+  const fillAngleDegrees = random(FILL_ANGLE_MIN_DEGREES, FILL_ANGLE_MAX_DEGREES);
+  const lines = fillStyle.skipFill ? [] : createSolidFillStrokes(section, lineSpacing, inset, fillAngleDegrees);
 
   return {
     ...section,
-    angleDegrees,
-    lineSpacing,
+    fillColor: fillStyle.fillColor,
+    skipFill: fillStyle.skipFill,
+    fillAngleDegrees,
     lines,
     currentLineIndex: 0,
     currentLineProgress: 0,
@@ -238,29 +266,29 @@ function createSegment(x1, y1, x2, y2) {
   };
 }
 
-function getSpacingBounds() {
+function getFillSpacingBounds() {
   const scale = min(width, height);
   return {
-    min: max(HATCH_SPACING_MIN_PX, scale * HATCH_SPACING_MIN_SCALE),
-    max: max(HATCH_SPACING_MAX_PX, scale * HATCH_SPACING_MAX_SCALE),
+    min: max(FILL_SPACING_MIN_PX, scale * FILL_SPACING_MIN_SCALE),
+    max: max(FILL_SPACING_MAX_PX, scale * FILL_SPACING_MAX_SCALE),
   };
 }
 
-function createHatchLines(section, angle, spacing, inset) {
+function createSolidFillStrokes(section, spacing, inset, angleDegrees) {
   const x = section.x + inset;
   const y = section.y + inset;
   const w = section.w - inset * 2;
   const h = section.h - inset * 2;
-
   if (w <= 1 || h <= 1) return [];
 
-  const centerX = x + w * 0.5;
-  const centerY = y + h * 0.5;
+  const angle = radians(angleDegrees);
   const dx = cos(angle);
   const dy = sin(angle);
   const nx = -dy;
   const ny = dx;
   const diagonal = sqrt(w * w + h * h);
+  const centerX = x + w * 0.5;
+  const centerY = y + h * 0.5;
   const corners = [
     [x, y],
     [x + w, y],
@@ -276,24 +304,35 @@ function createHatchLines(section, angle, spacing, inset) {
     maxOffset = max(maxOffset, projection);
   }
 
+  let offset = minOffset - random(spacing * 0.3, spacing);
   const lines = [];
-  let offset = minOffset - random(spacing * 0.2, spacing);
-
   while (offset <= maxOffset + spacing) {
     offset += spacing;
-    const baseX = centerX + nx * offset;
-    const baseY = centerY + ny * offset;
+    const jitter = random(-spacing * 0.14, spacing * 0.14);
+    const baseX = centerX + nx * (offset + jitter);
+    const baseY = centerY + ny * (offset + jitter);
     const rawX1 = baseX - dx * diagonal;
     const rawY1 = baseY - dy * diagonal;
     const rawX2 = baseX + dx * diagonal;
     const rawY2 = baseY + dy * diagonal;
     const clipped = clipSegmentToRect(rawX1, rawY1, rawX2, rawY2, x, y, w, h);
     if (clipped) {
-      const length = dist(clipped.x1, clipped.y1, clipped.x2, clipped.y2);
-      if (length > 0.001) lines.push({ ...clipped, length });
+      const startX = clipped.x1 <= clipped.x2 ? clipped.x1 : clipped.x2;
+      const startY = clipped.x1 <= clipped.x2 ? clipped.y1 : clipped.y2;
+      const endX = clipped.x1 <= clipped.x2 ? clipped.x2 : clipped.x1;
+      const endY = clipped.x1 <= clipped.x2 ? clipped.y2 : clipped.y1;
+      const segment = createSegment(startX, startY, endX, endY);
+      if (segment.length > 0.001) lines.push(segment);
     }
   }
-
+  lines.sort((a, b) => {
+    const aTop = min(a.y1, a.y2);
+    const bTop = min(b.y1, b.y2);
+    if (abs(aTop - bTop) > 0.5) return aTop - bTop;
+    const aLeft = min(a.x1, a.x2);
+    const bLeft = min(b.x1, b.x2);
+    return aLeft - bLeft;
+  });
   return lines;
 }
 
@@ -310,9 +349,7 @@ function clipSegmentToRect(x1, y1, x2, y2, x, y, w, h) {
       if (q[i] < 0) return null;
       continue;
     }
-
     const r = q[i] / p[i];
-
     if (p[i] < 0) {
       if (r > t1) return null;
       if (r > t0) t0 = r;
@@ -330,11 +367,36 @@ function clipSegmentToRect(x1, y1, x2, y2, x, y, w, h) {
   };
 }
 
+function buildSketchFillPalette() {
+  return [RED_PASTEL_SHADES, YELLOW_PASTEL_SHADES, BLUE_PASTEL_SHADES].map((family) => {
+    const base = random(family);
+    return [
+      constrain(base[0] + random(-6, 6), 0, 255),
+      constrain(base[1] + random(-6, 6), 0, 255),
+      constrain(base[2] + random(-6, 6), 0, 255),
+      random(200, 238),
+    ];
+  });
+}
+
+function pickRectangleFillStyle() {
+  const roll = random();
+  if (roll < WHITE_RECTANGLE_PROBABILITY) {
+    return { fillColor: WHITE_FILL_COLOR.slice(), skipFill: true };
+  }
+  if (roll < WHITE_RECTANGLE_PROBABILITY + BLACK_FILL_PROBABILITY) {
+    return { fillColor: BLACK_FILL_COLOR.slice(), skipFill: false };
+  }
+
+  const base = random(sketchFillPalette);
+  if (!base) return { fillColor: BLACK_FILL_COLOR.slice(), skipFill: false };
+  return { fillColor: base.slice(), skipFill: false };
+}
+
 function drawNextStrokeDistance(section, distanceBudget) {
   if (section.currentLineIndex >= section.lines.length) return 0;
 
   let consumed = 0;
-  stroke(...HATCH_COLOR);
   strokeCap(ROUND);
 
   while (distanceBudget > 0 && section.currentLineIndex < section.lines.length) {
@@ -355,7 +417,13 @@ function drawNextStrokeDistance(section, distanceBudget) {
 
     const step = min(remainingOnLine, distanceBudget);
     const nextProgress = section.currentLineProgress + step;
-    strokeWeight(max(0.7, fillerLineWeight + random(-0.12, 0.14)));
+    stroke(
+      constrain(section.fillColor[0] + random(-8, 8), 0, 255),
+      constrain(section.fillColor[1] + random(-8, 8), 0, 255),
+      constrain(section.fillColor[2] + random(-8, 8), 0, 255),
+      constrain(section.fillColor[3] + random(-16, 16), 120, 255)
+    );
+    strokeWeight(max(1.8, fillerLineWeight * FILL_STROKE_WEIGHT_MULTIPLIER + random(-0.20, 0.35)));
     drawSegmentPortion(segment, section.currentLineProgress, nextProgress);
     section.currentLineProgress = nextProgress;
     distanceBudget -= step;
