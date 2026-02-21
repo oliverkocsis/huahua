@@ -7,9 +7,9 @@ const sketchCredits = {
 registerSketchCredits(sketchCredits);
 
 const AREA_MIN_RATIO = 0.01;
-const AREA_MAX_RATIO = 0.10;
-const RECT_RATIO_MIN = 0.5;
-const RECT_RATIO_MAX = 2.0;
+const AREA_MAX_RATIO = 0.05;
+const RECT_RATIO_MIN = 0.50;
+const RECT_RATIO_MAX = 2.00;
 const COMPOSITION_MARGIN_RATIO = 0.06;
 const COMPOSITION_MARGIN_MIN = 32;
 const COMPOSITION_MARGIN_MAX = 96;
