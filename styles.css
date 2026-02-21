@@ -7,6 +7,9 @@
   --control-idle: rgba(255, 255, 255, 0.14);
   --control-active: rgba(255, 255, 255, 0.9);
   --control-active-text: #1c1712;
+  --credit-title: rgba(249, 244, 239, 0.86);
+  --credit-author: rgba(255, 255, 255, 0.97);
+  --credit-link: rgba(236, 225, 214, 0.82);
 }
 
 * {
@@ -26,6 +29,59 @@ canvas {
   display: block;
   width: 100vw;
   height: 100vh;
+}
+
+.main-credit {
+  position: fixed;
+  left: clamp(0.75rem, 2.5vw, 1.6rem);
+  bottom: clamp(0.85rem, 2.8vw, 1.8rem);
+  z-index: 20;
+  width: min(62vw, 350px);
+  max-width: min(62vw, 350px);
+  padding: 0.65rem 0.95rem 0.72rem;
+  border-top-left-radius: 8px;
+  border-bottom-left-radius: 8px;
+  background: linear-gradient(90deg, rgba(26, 22, 18, 0.64), rgba(26, 22, 18, 0.2) 88%, rgba(26, 22, 18, 0));
+  pointer-events: auto;
+}
+
+.credit-title,
+.credit-author,
+.credit-url {
+  display: block;
+  width: 100%;
+  min-width: 0;
+  margin: 0;
+  font-family: "Avenir Next", "Segoe UI", sans-serif;
+  line-height: 1.25;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.credit-title {
+  font-size: 0.66rem;
+  letter-spacing: 0.11em;
+  text-transform: uppercase;
+  color: var(--credit-title);
+}
+
+.credit-author {
+  margin-top: 0.2rem;
+  font-size: 0.98rem;
+  font-weight: 600;
+  color: var(--credit-author);
+}
+
+.credit-url {
+  margin-top: 0.16rem;
+  font-size: 0.83rem;
+  color: var(--credit-link);
+  text-decoration: none;
+}
+
+.credit-url:hover {
+  text-decoration: underline;
 }
 
 .main-controls {
@@ -56,6 +112,28 @@ canvas {
   padding: 0 0.28rem 0 0.42rem;
 }
 
+.speed-current {
+  display: none;
+  border: 0;
+  border-radius: 999px;
+  background: var(--control-active);
+  color: var(--control-active-text);
+  min-width: 2.3rem;
+  height: 1.8rem;
+  padding: 0 0.6rem;
+  font-family: "Avenir Next", "Segoe UI", sans-serif;
+  font-size: 0.82rem;
+  font-weight: 700;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.speed-options {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+}
+
 .speed-button {
   border: 0;
   border-radius: 999px;
@@ -79,4 +157,63 @@ canvas {
 .speed-button.is-active {
   background: var(--control-active);
   color: var(--control-active-text);
+}
+
+@media (max-width: 720px) {
+  .main-controls {
+    right: clamp(0.65rem, 2.4vw, 1.2rem);
+    bottom: clamp(0.65rem, 2.4vw, 1.2rem);
+  }
+
+  .speed-control {
+    position: relative;
+    padding: 0.3rem;
+    gap: 0;
+  }
+
+  .speed-label {
+    display: none;
+  }
+
+  .speed-current {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .speed-options {
+    position: absolute;
+    right: 0;
+    bottom: calc(100% + 0.45rem);
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0.28rem;
+    padding: 0.35rem;
+    border-radius: 12px;
+    background: var(--control-bg);
+    border: 1px solid var(--control-border);
+    backdrop-filter: blur(8px);
+    opacity: 0;
+    transform: translateY(8px) scale(0.96);
+    transform-origin: bottom right;
+    pointer-events: none;
+    transition: opacity 160ms ease, transform 160ms ease;
+  }
+
+  .speed-control.is-open .speed-options {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+    pointer-events: auto;
+  }
+
+  .speed-control.is-open .speed-current {
+    background: var(--control-idle);
+    color: var(--control-text);
+  }
+
+  .speed-button {
+    min-width: 2.5rem;
+    height: 1.9rem;
+  }
 }

@@ -8,12 +8,20 @@
     <script src="https://cdn.jsdelivr.net/npm/p5@1.9.4/lib/p5.min.js"></script>
   </head>
   <body>
+    <aside class="main-credit" aria-label="Drawing credit">
+      <p class="credit-title">Now Drawing</p>
+      <p class="credit-author"></p>
+      <a class="credit-url" href="#" target="_blank" rel="noopener noreferrer"></a>
+    </aside>
     <aside class="main-controls" aria-label="Playback controls">
       <div class="speed-control" role="group" aria-label="Drawing speed">
         <span class="speed-label">Speed</span>
-        <button class="speed-button is-active" type="button" data-speed="1" aria-pressed="true">1x</button>
-        <button class="speed-button" type="button" data-speed="2" aria-pressed="false">2x</button>
-        <button class="speed-button" type="button" data-speed="4" aria-pressed="false">4x</button>
+        <button class="speed-current" type="button" aria-expanded="false" aria-controls="speed-options">1x</button>
+        <div class="speed-options" id="speed-options">
+          <button class="speed-button is-active" type="button" data-speed="1" aria-pressed="true">1x</button>
+          <button class="speed-button" type="button" data-speed="2" aria-pressed="false">2x</button>
+          <button class="speed-button" type="button" data-speed="4" aria-pressed="false">4x</button>
+        </div>
       </div>
     </aside>
     <script src="./app.js"></script>

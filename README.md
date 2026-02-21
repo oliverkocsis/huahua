@@ -35,6 +35,13 @@ Current sketch:
 - `styles.css`: full-screen canvas styling
 - `pebbles/`: the current sketch folder
 
+## Credits Overlay
+- Bottom-left title/credit is owned by the main app, not the sketch.
+- Credits are required for every sketch.
+- Set credits in the active sketch file as `sketchCredits` (`title`, `author`, `url`).
+- `index.html` only contains the credit UI container (`.main-credit`).
+- The UI shows a shortened URL with `...`, but the full URL remains the clickable link target.
+
 ## Run Locally
 Option A: open `index.html` in a browser.
 
@@ -64,6 +71,7 @@ python3 -m http.server 8000
 - Create a new folder `/<sketch-name>/`.
 - Add `sketch.js` and `sketch.md` in that folder.
 - Point `index.html` at the new `/<sketch-name>/sketch.js`.
+- Define `sketchCredits` in `/<sketch-name>/sketch.js` with the sketch title, author handle, and original source URL.
 
 ## Contributing
 Small, focused improvements are welcome.

@@ -6,6 +6,14 @@ const pebblePalette = [
   [170, 152, 133, 40],
 ];
 
+const sketchCredits = {
+  title: "doodle diary vol.90",
+  author: "@camellia_doodle",
+  url: "https://www.instagram.com/p/DTQC1gpE-6S/",
+};
+
+registerSketchCredits(sketchCredits);
+
 const bgColor = [246, 241, 232];
 const pebbles = [];
 let centerX = 0;
@@ -240,7 +248,7 @@ function finalizePebble(pebble) {
 }
 
 function mousePressed(event) {
-  if (event && event.target && event.target.closest(".main-controls")) return;
+  if (event && event.target && (event.target.closest(".main-controls") || event.target.closest(".main-credit"))) return;
   startCluster();
 }
 
@@ -309,4 +317,12 @@ function getSpeedAdjustedIncrement(baseIncrement) {
     increment += baseIncrement * random(10, 50);
   }
   return increment;
+}
+
+function registerSketchCredits(credits) {
+  if (window.HUAHUA_APP && typeof window.HUAHUA_APP.setCredits === "function") {
+    window.HUAHUA_APP.setCredits(credits);
+    return;
+  }
+  window.HUAHUA_PENDING_CREDITS = credits;
 }
