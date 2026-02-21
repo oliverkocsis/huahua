@@ -6,6 +6,7 @@ Huahua is a tiny hobby sketch. Open a page and watch pebbles get drawn.
 - A cluster of pebble-like shapes grows from the center outward
 - Pebbles never overlap and try to touch as much as possible
 - Each pebble is traced first (pencil-like outline), then filled
+- Main app speed control in the bottom-right (`1x`, `2x`, `4x`)
 - The sketch stops when the screen is full
 - Click to restart
 
@@ -30,6 +31,7 @@ Current sketch:
 
 ## Project Layout
 - `index.html`: loads `p5.js` and the current sketch
+- `app.js`: main app UI and global speed control state
 - `styles.css`: full-screen canvas styling
 - `pebbles/`: the current sketch folder
 

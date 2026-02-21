@@ -28,8 +28,9 @@ function draw() {
 
   if (isFull) return;
 
-  // Grow one new neighboring pebble every 2 frames.
-  if (frameCount % 2 !== 0) return;
+  const speedMode = getMainSpeedMode();
+  // Keep 1x slower/human-like; 2x/4x place new pebbles every frame.
+  if (speedMode === 1 && frameCount % 3 !== 0) return;
 
   const next = findNextPebble();
   if (!next) {
@@ -171,7 +172,7 @@ function createPebble(x, y, radius) {
 
 function animatePebbleDrawing(pebble) {
   const from = pebble.drawProgress;
-  pebble.drawProgress = min(pebble.perimeter, pebble.drawProgress + pebble.drawSpeed);
+  pebble.drawProgress = min(pebble.perimeter, pebble.drawProgress + getSpeedAdjustedIncrement(pebble.drawSpeed));
   drawPebbleStrokeRange(pebble, from, pebble.drawProgress);
 
   if (pebble.drawProgress >= pebble.perimeter) {
@@ -238,7 +239,8 @@ function finalizePebble(pebble) {
   pop();
 }
 
-function mousePressed() {
+function mousePressed(event) {
+  if (event && event.target && event.target.closest(".main-controls")) return;
   startCluster();
 }
 
@@ -287,4 +289,24 @@ function calculatePackingRadius(points) {
     if (pointDistance > maxDistance) maxDistance = pointDistance;
   }
   return maxDistance;
+}
+
+function getMainSpeedMode() {
+  if (!window.HUAHUA_APP || !Number.isFinite(window.HUAHUA_APP.speed)) return 1;
+  const speed = window.HUAHUA_APP.speed;
+  if (speed === 2 || speed === 4) return speed;
+  return 1;
+}
+
+function getSpeedAdjustedIncrement(baseIncrement) {
+  const speedMode = getMainSpeedMode();
+  if (speedMode === 1) return baseIncrement * 0.5;
+  if (speedMode === 2) return baseIncrement * 2;
+
+  let increment = baseIncrement * 4;
+  // 4x keeps the 2x base pace, then jumps ahead more often and farther.
+  if (random() < 0.5) {
+    increment += baseIncrement * random(10, 50);
+  }
+  return increment;
 }

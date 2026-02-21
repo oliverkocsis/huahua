@@ -5,6 +5,7 @@ This sketch grows a packed cluster of pebble-like shapes from the center of the 
 Each pebble starts from an organic polygon, then its outline is smoothed into curves.
 Each new pebble is placed to touch existing pebbles while never overlapping.
 Pebbles are drawn with an animated outline first (like a pencil tracing the shape), then filled in once the outline completes.
+Drawing speed is controlled by the main app speed controller (`1x`, `2x`, `4x`) in the bottom-right corner.
 
 ## How The Growth Works
 The sketch starts with one pebble at the center.
@@ -58,7 +59,7 @@ Draws only the next segment of the outline each frame, then finalizes the pebble
 ```js
 function animatePebbleDrawing(pebble) {
   const from = pebble.drawProgress;
-  pebble.drawProgress = min(pebble.perimeter, pebble.drawProgress + pebble.drawSpeed);
+  pebble.drawProgress = min(pebble.perimeter, pebble.drawProgress + getSpeedAdjustedIncrement(pebble.drawSpeed));
   drawPebbleStrokeRange(pebble, from, pebble.drawProgress);
 
   if (pebble.drawProgress >= pebble.perimeter) {
@@ -104,5 +105,26 @@ if (!next) {
     isFull = true;
     noLoop();
   }
+}
+```
+
+### 8) Read Main App Speed And Apply It
+Speed control belongs to the main app (`app.js`).  
+The sketch reads `window.HUAHUA_APP.speed` and maps it like this:
+- `1x`: slower human-like pace
+- `2x`: faster machine-like pace, still visible
+- `4x`: same base as `2x`, but jumps farther and more often
+
+```js
+function getSpeedAdjustedIncrement(baseIncrement) {
+  const speedMode = getMainSpeedMode();
+  if (speedMode === 1) return baseIncrement;
+  if (speedMode === 2) return baseIncrement * 2;
+
+  let increment = baseIncrement * 2;
+  if (random() < 0.2) {
+    increment += baseIncrement * random(4, 10);
+  }
+  return increment;
 }
 ```
