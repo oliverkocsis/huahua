@@ -2,7 +2,8 @@
 
 ## What Is Drawn
 This sketch grows a packed cluster of pebble-like shapes from the center of the screen outward.
-Each pebble is an organic polygon, and each new pebble is placed to touch existing pebbles while never overlapping.
+Each pebble starts from an organic polygon, then its outline is smoothed into curves.
+Each new pebble is placed to touch existing pebbles while never overlapping.
 Pebbles are drawn with an animated outline first (like a pencil tracing the shape), then filled in once the outline completes.
 
 ## How The Growth Works
@@ -30,22 +31,24 @@ function startCluster() {
 ```
 
 ### 2) Add A Neighbor Without Overlap
-Picks a parent pebble, proposes a new pebble exactly one radius away (touching), and rejects any candidate that overlaps.
+Picks a parent pebble, then places the candidate at a distance based on each pebble's smoothed-shape packing radius so they touch with minimal gaps.
+Candidates that still overlap are rejected.
 
 ```js
-const x = parent.x + cos(angle) * (parent.r + radius);
-const y = parent.y + sin(angle) * (parent.r + radius);
+const centerDistance = parent.packingRadius + candidate.packingRadius;
+candidate.x = parent.x + cos(angle) * centerDistance;
+candidate.y = parent.y + sin(angle) * centerDistance;
 
-if (!fitsInViewport(x, y, radius)) continue;
-if (overlapsExisting(x, y, radius)) continue;
+if (!fitsInViewport(candidate.x, candidate.y, candidate.packingRadius)) continue;
+if (overlapsExisting(candidate)) continue;
 ```
 
 ### 3) Prefer Touching More Pebbles
 Scores candidates by how many neighbors they touch (plus a small outward bias), choosing the best-scoring placement.
 
 ```js
-const contacts = countTouchingNeighbors(x, y, radius);
-const outward = dist(centerX, centerY, x, y);
+const contacts = countTouchingNeighbors(candidate);
+const outward = dist(centerX, centerY, candidate.x, candidate.y);
 const score = contacts * 100 + outward * 0.05;
 ```
 
@@ -65,7 +68,33 @@ function animatePebbleDrawing(pebble) {
 }
 ```
 
-### 5) Stop When The Screen Is Full
+### 5) Smooth Polygon Points Into Curves
+Applies a closed-loop Chaikin smoothing pass, then uses the smoothed loop for both animation and final rendering.
+
+```js
+const smoothPoints = smoothClosedPoints(points, 2);
+const perimeter = calculateLoopPerimeter(smoothPoints);
+
+return {
+  points: smoothPoints,
+  packingRadius: calculatePackingRadius(smoothPoints),
+  perimeter,
+};
+```
+
+### 6) Render Final Pebble As A Curved Shape
+Uses `curveVertex` around the full loop so corners are rounded instead of sharp.
+
+```js
+beginShape();
+for (let i = -2; i < pebble.points.length + 2; i += 1) {
+  const point = pebble.points[(i + pebble.points.length) % pebble.points.length];
+  curveVertex(point.x, point.y);
+}
+endShape(CLOSE);
+```
+
+### 7) Stop When The Screen Is Full
 After repeated failures to place a new pebble, the sketch marks itself full and stops the draw loop.
 
 ```js
@@ -77,4 +106,3 @@ if (!next) {
   }
 }
 ```
-

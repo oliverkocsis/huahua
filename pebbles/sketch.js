@@ -68,21 +68,22 @@ function findNextPebble() {
 
   for (let i = 0; i < attempts; i += 1) {
     const parent = pickRandomParent();
-    const radius = random(18, 46);
+    const candidate = createPebble(0, 0, random(18, 46));
     const angle = pickNeighborAngle(parent);
-    const x = parent.x + cos(angle) * (parent.r + radius);
-    const y = parent.y + sin(angle) * (parent.r + radius);
+    const centerDistance = parent.packingRadius + candidate.packingRadius;
+    candidate.x = parent.x + cos(angle) * centerDistance;
+    candidate.y = parent.y + sin(angle) * centerDistance;
 
-    if (!fitsInViewport(x, y, radius)) continue;
-    if (overlapsExisting(x, y, radius)) continue;
+    if (!fitsInViewport(candidate.x, candidate.y, candidate.packingRadius)) continue;
+    if (overlapsExisting(candidate)) continue;
 
-    const contacts = countTouchingNeighbors(x, y, radius);
-    const outward = dist(centerX, centerY, x, y);
+    const contacts = countTouchingNeighbors(candidate);
+    const outward = dist(centerX, centerY, candidate.x, candidate.y);
     const score = contacts * 100 + outward * 0.05 + random(0, 0.2);
 
     if (score > bestScore) {
       bestScore = score;
-      best = createPebble(x, y, radius);
+      best = candidate;
     }
   }
 
@@ -113,21 +114,22 @@ function pickNeighborAngle(parent) {
   return outward + random(-PI * 0.9, PI * 0.9);
 }
 
-function overlapsExisting(x, y, radius) {
+function overlapsExisting(candidate) {
   for (const pebble of pebbles) {
-    if (dist(x, y, pebble.x, pebble.y) < radius + pebble.r) {
+    const target = pebble.packingRadius + candidate.packingRadius;
+    if (dist(candidate.x, candidate.y, pebble.x, pebble.y) < target - 0.35) {
       return true;
     }
   }
   return false;
 }
 
-function countTouchingNeighbors(x, y, radius) {
+function countTouchingNeighbors(candidate) {
   let count = 0;
   for (const pebble of pebbles) {
-    const d = dist(x, y, pebble.x, pebble.y);
-    const target = radius + pebble.r;
-    if (abs(d - target) <= 1.6) count += 1;
+    const d = dist(candidate.x, candidate.y, pebble.x, pebble.y);
+    const target = candidate.packingRadius + pebble.packingRadius;
+    if (abs(d - target) <= 1.2) count += 1;
   }
   return count;
 }
@@ -148,18 +150,16 @@ function createPebble(x, y, radius) {
     points.push({ x: cos(angle) * edge, y: sin(angle) * edge });
   }
 
-  let perimeter = 0;
-  for (let i = 0; i < points.length; i += 1) {
-    const aPoint = points[i];
-    const bPoint = points[(i + 1) % points.length];
-    perimeter += dist(aPoint.x, aPoint.y, bPoint.x, bPoint.y);
-  }
+  const smoothPoints = smoothClosedPoints(points, 2);
+  const perimeter = calculateLoopPerimeter(smoothPoints);
+  const packingRadius = calculatePackingRadius(smoothPoints);
 
   return {
     x,
     y,
     r: radius,
-    points,
+    packingRadius,
+    points: smoothPoints,
     color: [r, g, b, a],
     angle: random(TWO_PI),
     strokeW: random(0.7, 1.2),
@@ -189,6 +189,8 @@ function drawPebbleStrokeRange(pebble, fromDistance, toDistance) {
   noFill();
   stroke(44, 35, 28, 110);
   strokeWeight(pebble.strokeW);
+  strokeJoin(ROUND);
+  strokeCap(ROUND);
 
   let traveled = 0;
   for (let i = 0; i < pebble.points.length; i += 1) {
@@ -220,10 +222,13 @@ function finalizePebble(pebble) {
   fill(...pebble.color);
   stroke(46, 36, 28, 95);
   strokeWeight(pebble.strokeW);
+  strokeJoin(ROUND);
+  strokeCap(ROUND);
 
   beginShape();
-  for (const point of pebble.points) {
-    vertex(point.x, point.y);
+  for (let i = -2; i < pebble.points.length + 2; i += 1) {
+    const point = pebble.points[(i + pebble.points.length) % pebble.points.length];
+    curveVertex(point.x, point.y);
   }
   endShape(CLOSE);
 
@@ -242,3 +247,44 @@ function windowResized() {
   startCluster();
 }
 
+function smoothClosedPoints(inputPoints, iterations) {
+  let smoothed = inputPoints.slice();
+
+  for (let iteration = 0; iteration < iterations; iteration += 1) {
+    const next = [];
+    for (let index = 0; index < smoothed.length; index += 1) {
+      const current = smoothed[index];
+      const nextPoint = smoothed[(index + 1) % smoothed.length];
+      next.push({
+        x: current.x * 0.75 + nextPoint.x * 0.25,
+        y: current.y * 0.75 + nextPoint.y * 0.25,
+      });
+      next.push({
+        x: current.x * 0.25 + nextPoint.x * 0.75,
+        y: current.y * 0.25 + nextPoint.y * 0.75,
+      });
+    }
+    smoothed = next;
+  }
+
+  return smoothed;
+}
+
+function calculateLoopPerimeter(points) {
+  let perimeter = 0;
+  for (let index = 0; index < points.length; index += 1) {
+    const current = points[index];
+    const nextPoint = points[(index + 1) % points.length];
+    perimeter += dist(current.x, current.y, nextPoint.x, nextPoint.y);
+  }
+  return perimeter;
+}
+
+function calculatePackingRadius(points) {
+  let maxDistance = 0;
+  for (const point of points) {
+    const pointDistance = dist(0, 0, point.x, point.y);
+    if (pointDistance > maxDistance) maxDistance = pointDistance;
+  }
+  return maxDistance;
+}
