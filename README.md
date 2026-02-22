@@ -1,11 +1,11 @@
 # Huahua
 
-Huahua is a tiny hobby sketch. Open a page and watch pebbles get drawn.
+Huahua is a tiny hobby sketch. Open a page and watch circles get drawn.
 
 ## What It Does
-- A cluster of pebble-like shapes grows from the center outward
-- Pebbles never overlap and try to touch as much as possible
-- Each pebble is traced first (pencil-like outline), then filled
+- A packed composition of circles grows from large to tiny sizes
+- Circles never overlap and try to touch as much as possible
+- Each circle is traced as an animated outline (no fill)
 - Top-left sketch switcher to choose between available sketches
 - Main app speed control in the bottom-right (`1x`, `2x`, `4x`)
 - The sketch stops when the screen is full
@@ -29,9 +29,51 @@ Each sketch lives in its own folder and comes as a pair:
 Available sketches:
 - `mondriaan/sketch.js` + `mondriaan/sketch.md`
 - `pebbles/sketch.js` + `pebbles/sketch.md`
+- `circles/sketch.js` + `circles/sketch.md`
 
 Default sketch:
 - `mondriaan` (you can switch from the top-left selector)
+
+## `sketch.md` Writing Standard
+Write each `sketch.md` for two audiences: artists (intent and visual language) and developers (reusable implementation patterns).
+
+Required structure:
+1. `Original Drawing Objective (Artist-Facing)`  
+Describe the drawing goal in human words: mood, composition, movement, texture, and what should feel intentional to a visual artist.
+2. `Parameter Guide (Value-Agnostic)`  
+Explain what each parameter controls and how changing it affects the output. Do not hardcode exact production values in prose. You may use example ranges or sample values for illustration only.
+3. `Overall Drawing Strategy (Developer-Facing)`  
+Provide a step-by-step strategy from setup to finish so the algorithm can be reused in other doodles.
+4. `Detailed Steps + Reusable Snippets (Developer-Facing)`  
+For each step, add concise explanation plus example code that can be copied/adapted.
+
+Parameter rules:
+- Keep exact, active parameter values at the top of `/<sketch-name>/sketch.js` as easy-to-scan constants.
+- Keep `sketch.md` stable when tuning values change; update the meaning/behavior description only when logic changes.
+- Prefer naming parameters by purpose (for example: spacing, density, jitter, speed) instead of repeating current numeric values.
+
+Recommended section template for each `sketch.md`:
+- `# <Sketch Name>`
+- `## Original Drawing Objective (Artist-Facing)`
+- `## Parameter Guide (Value-Agnostic)`
+- `## Overall Drawing Strategy (Developer-Facing)`
+- `## Detailed Steps + Reusable Snippets`
+
+Prompt template (copy/paste):
+```md
+Create or revise `/<sketch-name>/sketch.md` for two audiences: artists and developers.
+
+Requirements:
+1. Original Drawing Objective (artist-facing): describe the intended visual result in natural, human language.
+2. Parameter Guide (value-agnostic): explain each parameter’s role and impact without locking prose to exact values. Include optional example ranges or sample values only.
+3. Overall Drawing Strategy (developer-facing): explain the algorithm step by step so it can be reused in other doodles.
+4. Detailed Steps + Reusable Snippets (developer-facing): provide per-step explanations with example code snippets.
+
+Rules:
+- Keep exact active values in `sketch.js` constants at the top of the file.
+- Do not require `sketch.md` updates for routine parameter tuning.
+- Focus `sketch.md` on intent, controls, and reusable logic.
+```
 
 ## Project Layout
 - `index.html`: loads `p5.js` and the main UI containers
@@ -39,6 +81,7 @@ Default sketch:
 - `styles.css`: full-screen canvas styling
 - `mondriaan/`: sketch folder
 - `pebbles/`: sketch folder
+- `circles/`: sketch folder
 
 ## Credits Overlay
 - Bottom-left title/credit is owned by the main app, not the sketch.
