@@ -214,12 +214,12 @@ canvas {
     top: clamp(0.65rem, 2.4vw, 1.2rem);
     right: auto;
     bottom: auto;
-    padding: 0.3rem 0.42rem 0.3rem 0.48rem;
-    gap: 0.34rem;
+    padding: 0.3rem 0.42rem;
+    gap: 0;
   }
 
   .sketch-label {
-    font-size: 0.68rem;
+    display: none;
   }
 
   .sketch-select {
