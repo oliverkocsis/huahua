@@ -1,12 +1,12 @@
 # Mondrian Sketch
 
-## Original Drawing Objective (Artist-Facing)
+## What Is Being Drawn?
 Create a Mondrian-inspired composition that feels constructed by hand instead of generated instantly.
 The image should read as a bold rectilinear layout with thick structural dividers, then gradually fill with textured color hatching.
 Color should stay in a Mondrian family: one red mood, one yellow mood, one blue mood, plus occasional black accents and intentional white gaps.
 Movement should feel human: split lines appear as they are decided, and fill strokes sweep back-and-forth as if a hand is changing direction between passes.
 
-## Parameter Guide (Value-Agnostic)
+## What Parameters Are Used?
 Exact active values live in constants at the top of `mondriaan/sketch.js`. Tune there; keep this guide behavior-focused.
 
 - Composition framing:
@@ -24,7 +24,7 @@ Exact active values live in constants at the top of `mondriaan/sketch.js`. Tune 
 - Line and background appearance:
   `GRID_COLOR`, `BG_COLOR` control the base paper tone and structural line tone.
 
-## Overall Drawing Strategy (Developer-Facing)
+## Drawing Strategy
 1. Initialize composition bounds and split state.
 2. Animate recursive splitting immediately, drawing each chosen split line segment as it progresses.
 3. Keep split state geometry-only until partitioning is done.
@@ -32,7 +32,7 @@ Exact active values live in constants at the top of `mondriaan/sketch.js`. Tune 
 5. Animate fill lines progressively with fixed per-segment step distance and serpentine direction.
 6. Stop rendering when all rectangles are complete; restart on click or resize.
 
-## Detailed Steps + Reusable Snippets (Developer-Facing)
+## Algorithms
 ### 1) Build Clean Split State
 Start from one inset root section and store only geometry in split data.
 

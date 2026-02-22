@@ -1,13 +1,13 @@
 # Circles Sketch
 
-## Original Drawing Objective (Artist-Facing)
+## What Is Being Drawn?
 Create a calm, hand-drawn field of circles that feels intentionally packed rather than randomly scattered.
 The composition should read in layers: large anchors first, then progressively smaller circles filling remaining space.
 Each circle is only an outline, so the negative space stays visible and the structure feels airy instead of heavy.
 Non-seed circles should stay connected by touch, and no circles should overlap.
 The drawing should feel like it grows from confident placement choices, then settles into finer detail.
 
-## Parameter Guide (Value-Agnostic)
+## What Parameters Are Used?
 All active values live as constants at the top of `circles/sketch.js`.
 Tune those constants without rewriting this document.
 
@@ -27,7 +27,7 @@ Effect: Preserves progressive line drawing feel, especially at `1x`.
 - `CIRCLE_STROKE_COLOR` and Mondriaan stroke constants: Controls visual line language and stroke thickness behavior.
 Effect: Keeps circle outlines visually consistent with the Mondriaan sketch style.
 
-## Overall Drawing Strategy (Developer-Facing)
+## Drawing Strategy
 1. Initialize canvas state and build size tiers from top-level constants.
 2. Seed the composition with one random large circle inside safe viewport bounds.
 3. For the active tier, generate many candidate circles and keep the best valid candidate.
@@ -38,7 +38,7 @@ Effect: Keeps circle outlines visually consistent with the Mondriaan sketch styl
 8. Advance through tiers from large to tiny; stop when tier budgets or global budget are exhausted.
 9. Validate end-state invariants to catch regressions (no intersections, no isolated non-seed circles).
 
-## Detailed Steps + Reusable Snippets (Developer-Facing)
+## Algorithms
 
 ### 1) Build Scaled Tier Plan
 ```js
