@@ -25,6 +25,12 @@ const HUMAN_PIXEL_STEPS_PER_FRAME = 4;
 const CORNER_RADIUS_MIN_SCALE = 0.1;
 const CORNER_RADIUS_MAX_SCALE = 0.2;
 const ARC_SEGMENT_MIN_LENGTH = 2.2;
+const FILL_CLIP_SAMPLE_STEP = 1.2;
+const MAX_LAYOUT_ATTEMPTS = 120;
+const MAX_LAYOUT_GUARD_STEPS = 600;
+const SPLIT_ORIENTATION_ATTEMPTS = 36;
+const FALLBACK_GRID_ROWS = 5;
+const FALLBACK_GRID_COLUMNS = 5;
 const WHITE_RECTANGLE_PROBABILITY = 0.40;
 const BLACK_FILL_PROBABILITY = 0.05;
 const WHITE_FILL_COLOR = [250, 249, 245, 230];
@@ -133,14 +139,14 @@ function generateMondrianRectangles() {
   const maxArea = compositionArea * AREA_MAX_RATIO;
   const root = composition;
 
-  for (let attempt = 0; attempt < 120; attempt += 1) {
+  for (let attempt = 0; attempt < MAX_LAYOUT_ATTEMPTS; attempt += 1) {
     const sections = [root];
     let failed = false;
     let guard = 0;
 
     while (true) {
       guard += 1;
-      if (guard > 600) {
+      if (guard > MAX_LAYOUT_GUARD_STEPS) {
         failed = true;
         break;
       }
@@ -191,7 +197,7 @@ function splitWithOrientation(section, minArea, orientation) {
     const maxWidth = section.w - minWidth;
     if (maxWidth <= minWidth) return null;
 
-    for (let attempt = 0; attempt < 36; attempt += 1) {
+    for (let attempt = 0; attempt < SPLIT_ORIENTATION_ATTEMPTS; attempt += 1) {
       const cutX = random(minWidth, maxWidth);
       const left = { x: section.x, y: section.y, w: cutX, h: section.h };
       const right = { x: section.x + cutX, y: section.y, w: section.w - cutX, h: section.h };
@@ -204,7 +210,7 @@ function splitWithOrientation(section, minArea, orientation) {
   const maxHeight = section.h - minHeight;
   if (maxHeight <= minHeight) return null;
 
-  for (let attempt = 0; attempt < 36; attempt += 1) {
+  for (let attempt = 0; attempt < SPLIT_ORIENTATION_ATTEMPTS; attempt += 1) {
     const cutY = random(minHeight, maxHeight);
     const top = { x: section.x, y: section.y, w: section.w, h: cutY };
     const bottom = { x: section.x, y: section.y + cutY, w: section.w, h: section.h - cutY };
@@ -215,8 +221,8 @@ function splitWithOrientation(section, minArea, orientation) {
 }
 
 function createFallbackGrid(bounds) {
-  const rows = 5;
-  const columns = 5;
+  const rows = FALLBACK_GRID_ROWS;
+  const columns = FALLBACK_GRID_COLUMNS;
   const cellWidth = bounds.w / columns;
   const cellHeight = bounds.h / rows;
   const sections = [];
@@ -237,15 +243,23 @@ function createFallbackGrid(bounds) {
 
 function createFillPlan(section) {
   const inset = borderWeight * 0.7;
+  const cornerRadii = pickRandomCornerRadii(section.w, section.h);
+  const fillW = section.w - inset * 2;
+  const fillH = section.h - inset * 2;
+  const fillCornerRadii = getInsetCornerRadii(cornerRadii, inset, fillW, fillH);
   const fillStyle = pickRectangleFillStyle();
   const spacingBounds = getFillSpacingBounds();
   const lineSpacing = random(spacingBounds.min, spacingBounds.max);
   const fillAngleDegrees = random(FILL_ANGLE_MIN_DEGREES, FILL_ANGLE_MAX_DEGREES);
-  const lines = fillStyle.skipFill ? [] : createSolidFillStrokes(section, lineSpacing, inset, fillAngleDegrees);
+  const lines = fillStyle.skipFill
+    ? []
+    : createSolidFillStrokes(section, lineSpacing, inset, fillAngleDegrees, fillCornerRadii);
 
   return {
     ...section,
-    cornerRadii: pickRandomCornerRadii(section.w, section.h),
+    cornerRadii,
+    fillInset: inset,
+    fillCornerRadii,
     fillColor: fillStyle.fillColor,
     skipFill: fillStyle.skipFill,
     fillAngleDegrees,
@@ -356,12 +370,13 @@ function getFillSpacingBounds() {
   };
 }
 
-function createSolidFillStrokes(section, spacing, inset, angleDegrees) {
+function createSolidFillStrokes(section, spacing, inset, angleDegrees, fillCornerRadiiInput) {
   const x = section.x + inset;
   const y = section.y + inset;
   const w = section.w - inset * 2;
   const h = section.h - inset * 2;
   if (w <= 1 || h <= 1) return [];
+  const fillCornerRadii = fillCornerRadiiInput || getInsetCornerRadii(section.cornerRadii, inset, w, h);
 
   const angle = radians(angleDegrees);
   const dx = cos(angle);
@@ -399,12 +414,25 @@ function createSolidFillStrokes(section, spacing, inset, angleDegrees) {
     const rawY2 = baseY + dy * diagonal;
     const clipped = clipSegmentToRect(rawX1, rawY1, rawX2, rawY2, x, y, w, h);
     if (clipped) {
-      const startX = clipped.x1 <= clipped.x2 ? clipped.x1 : clipped.x2;
-      const startY = clipped.x1 <= clipped.x2 ? clipped.y1 : clipped.y2;
-      const endX = clipped.x1 <= clipped.x2 ? clipped.x2 : clipped.x1;
-      const endY = clipped.x1 <= clipped.x2 ? clipped.y2 : clipped.y1;
-      const segment = createSegment(startX, startY, endX, endY);
-      if (segment.length > 0.001) lines.push(segment);
+      const roundedSegments = clipSegmentToRoundedRect(
+        clipped.x1,
+        clipped.y1,
+        clipped.x2,
+        clipped.y2,
+        x,
+        y,
+        w,
+        h,
+        fillCornerRadii
+      );
+      for (const roundedSegment of roundedSegments) {
+        const startX = roundedSegment.x1 <= roundedSegment.x2 ? roundedSegment.x1 : roundedSegment.x2;
+        const startY = roundedSegment.x1 <= roundedSegment.x2 ? roundedSegment.y1 : roundedSegment.y2;
+        const endX = roundedSegment.x1 <= roundedSegment.x2 ? roundedSegment.x2 : roundedSegment.x1;
+        const endY = roundedSegment.x1 <= roundedSegment.x2 ? roundedSegment.y2 : roundedSegment.y1;
+        const segment = createSegment(startX, startY, endX, endY);
+        if (segment.length > 0.001) lines.push(segment);
+      }
     }
   }
   lines.sort((a, b) => {
@@ -447,6 +475,90 @@ function clipSegmentToRect(x1, y1, x2, y2, x, y, w, h) {
     x2: x1 + t1 * dx,
     y2: y1 + t1 * dy,
   };
+}
+
+function getInsetCornerRadii(cornerRadii, inset, width, height) {
+  if (!cornerRadii) return { tl: 0, tr: 0, br: 0, bl: 0 };
+  const insetRadii = {
+    tl: max(0, cornerRadii.tl - inset),
+    tr: max(0, cornerRadii.tr - inset),
+    br: max(0, cornerRadii.br - inset),
+    bl: max(0, cornerRadii.bl - inset),
+  };
+  return fitCornerRadiiToBounds(insetRadii, width, height);
+}
+
+function clipSegmentToRoundedRect(x1, y1, x2, y2, x, y, w, h, cornerRadii) {
+  const segmentLength = dist(x1, y1, x2, y2);
+  if (segmentLength <= 0.001) return [];
+
+  const steps = max(2, ceil(segmentLength / FILL_CLIP_SAMPLE_STEP));
+  const clippedSegments = [];
+  let prevX = x1;
+  let prevY = y1;
+  let prevInside = isPointInsideRoundedRect(prevX, prevY, x, y, w, h, cornerRadii);
+  let runStart = prevInside ? { x: prevX, y: prevY } : null;
+
+  for (let i = 1; i <= steps; i += 1) {
+    const t = i / steps;
+    const currX = lerp(x1, x2, t);
+    const currY = lerp(y1, y2, t);
+    const currInside = isPointInsideRoundedRect(currX, currY, x, y, w, h, cornerRadii);
+
+    if (currInside && !prevInside) {
+      runStart = { x: currX, y: currY };
+    } else if (!currInside && prevInside && runStart) {
+      const segment = createSegment(runStart.x, runStart.y, prevX, prevY);
+      if (segment.length > 0.001) clippedSegments.push(segment);
+      runStart = null;
+    }
+
+    prevX = currX;
+    prevY = currY;
+    prevInside = currInside;
+  }
+
+  if (prevInside && runStart) {
+    const segment = createSegment(runStart.x, runStart.y, prevX, prevY);
+    if (segment.length > 0.001) clippedSegments.push(segment);
+  }
+
+  return clippedSegments;
+}
+
+function isPointInsideRoundedRect(px, py, x, y, w, h, cornerRadii) {
+  if (px < x || px > x + w || py < y || py > y + h) return false;
+
+  const tl = cornerRadii.tl || 0;
+  const tr = cornerRadii.tr || 0;
+  const br = cornerRadii.br || 0;
+  const bl = cornerRadii.bl || 0;
+  const right = x + w;
+  const bottom = y + h;
+  const epsilon = 0.01;
+
+  if (tl > 0 && px < x + tl && py < y + tl) {
+    const dx = px - (x + tl);
+    const dy = py - (y + tl);
+    return dx * dx + dy * dy <= tl * tl + epsilon;
+  }
+  if (tr > 0 && px > right - tr && py < y + tr) {
+    const dx = px - (right - tr);
+    const dy = py - (y + tr);
+    return dx * dx + dy * dy <= tr * tr + epsilon;
+  }
+  if (br > 0 && px > right - br && py > bottom - br) {
+    const dx = px - (right - br);
+    const dy = py - (bottom - br);
+    return dx * dx + dy * dy <= br * br + epsilon;
+  }
+  if (bl > 0 && px < x + bl && py > bottom - bl) {
+    const dx = px - (x + bl);
+    const dy = py - (bottom - bl);
+    return dx * dx + dy * dy <= bl * bl + epsilon;
+  }
+
+  return true;
 }
 
 function buildSketchFillPalette() {
@@ -506,7 +618,7 @@ function drawNextStrokeDistance(section, distanceBudget, singleSegmentMode) {
       constrain(section.fillColor[3] + random(-16, 16), 120, 255)
     );
     strokeWeight(max(1.8, fillerLineWeight * FILL_STROKE_WEIGHT_MULTIPLIER + random(-0.20, 0.35)));
-    drawSegmentPortion(segment, section.currentLineProgress, nextProgress);
+    drawFillSegmentPortion(section, segment, section.currentLineProgress, nextProgress);
     section.currentLineProgress = nextProgress;
     distanceBudget -= step;
     consumed += step;
@@ -531,6 +643,53 @@ function drawSegmentPortion(segment, fromDistance, toDistance) {
   const x2 = lerp(segment.x1, segment.x2, t2);
   const y2 = lerp(segment.y1, segment.y2, t2);
   line(x1, y1, x2, y2);
+}
+
+function drawFillSegmentPortion(section, segment, fromDistance, toDistance) {
+  const inset = Number.isFinite(section.fillInset) ? section.fillInset : borderWeight * 0.7;
+  const x = section.x + inset;
+  const y = section.y + inset;
+  const w = section.w - inset * 2;
+  const h = section.h - inset * 2;
+  if (w <= 1 || h <= 1) return;
+  const clipRadii = section.fillCornerRadii || getInsetCornerRadii(section.cornerRadii, inset, w, h);
+  withRoundedRectClip(x, y, w, h, clipRadii, () => {
+    drawSegmentPortion(segment, fromDistance, toDistance);
+  });
+}
+
+function withRoundedRectClip(x, y, w, h, cornerRadii, drawFn) {
+  const ctx = drawingContext;
+  ctx.save();
+  buildRoundedRectPath(ctx, x, y, w, h, cornerRadii);
+  ctx.clip();
+  drawFn();
+  ctx.restore();
+}
+
+function buildRoundedRectPath(ctx, x, y, w, h, cornerRadii) {
+  const tl = cornerRadii.tl || 0;
+  const tr = cornerRadii.tr || 0;
+  const br = cornerRadii.br || 0;
+  const bl = cornerRadii.bl || 0;
+  const right = x + w;
+  const bottom = y + h;
+
+  ctx.beginPath();
+  ctx.moveTo(x + tl, y);
+  ctx.lineTo(right - tr, y);
+  if (tr > 0.001) ctx.quadraticCurveTo(right, y, right, y + tr);
+  else ctx.lineTo(right, y);
+  ctx.lineTo(right, bottom - br);
+  if (br > 0.001) ctx.quadraticCurveTo(right, bottom, right - br, bottom);
+  else ctx.lineTo(right, bottom);
+  ctx.lineTo(x + bl, bottom);
+  if (bl > 0.001) ctx.quadraticCurveTo(x, bottom, x, bottom - bl);
+  else ctx.lineTo(x, bottom);
+  ctx.lineTo(x, y + tl);
+  if (tl > 0.001) ctx.quadraticCurveTo(x, y, x + tl, y);
+  else ctx.lineTo(x, y);
+  ctx.closePath();
 }
 
 function drawNextOutlineDistance(distanceBudget, singleSegmentMode) {
