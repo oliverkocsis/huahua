@@ -279,7 +279,14 @@ function createSolidFillStrokes(section, spacing, inset, angleDegrees) {
     const bLeft = min(b.x1, b.x2);
     return aLeft - bLeft;
   });
+  for (let i = 1; i < lines.length; i += 2) {
+    lines[i] = reverseSegmentDirection(lines[i]);
+  }
   return lines;
+}
+
+function reverseSegmentDirection(segment) {
+  return createSegment(segment.x2, segment.y2, segment.x1, segment.y1);
 }
 
 function clipSegmentToRect(x1, y1, x2, y2, x, y, w, h) {

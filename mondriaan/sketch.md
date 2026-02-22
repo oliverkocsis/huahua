@@ -7,7 +7,7 @@ Split lines are animated immediately while the partition is being built (no sepa
 Each sketch picks exactly 3 strong pastel colors: one red shade, one yellow shade, and one blue shade.
 Some rectangles are randomly left white (unfilled).
 The fill is built from many clipped strokes at a random angle between `-60°` and `-30°` to approximate a hand-drawn solid block.
-Fill lines are ordered to start from the top-left region first and drawn left-to-right to feel right-handed.
+Fill lines are ordered from the top-left region first, but line direction alternates back-and-forth (serpentine) to mimic hand movement while filling.
 Rectangles are also processed from top-left toward bottom-right across the composition.
 The full composition is inset from the canvas edges so no rectangle runs edge-to-edge on the viewport.
 
@@ -20,6 +20,7 @@ The full composition is inset from the canvas edges so no rectangle runs edge-to
 - Some rectangles are randomly left white (no interior fill strokes).
 - Fill spacing is fixed inside one rectangle, but differs from rectangle to rectangle.
 - Fill stroke direction is randomized per rectangle in the range `[-60°, -30°]`.
+- Consecutive fill lines alternate direction to create back-and-forth filling motion.
 - Split-line borders are animated as each valid split is chosen.
 - Fill spacing bounds are controlled by constants, so density can be tuned centrally.
 - Fill strokes are intentionally thicker than before for stronger color coverage.
@@ -66,6 +67,7 @@ const spacingBounds = getFillSpacingBounds();
 const lineSpacing = random(spacingBounds.min, spacingBounds.max);
 const fillAngleDegrees = random(FILL_ANGLE_MIN_DEGREES, FILL_ANGLE_MAX_DEGREES);
 const lines = fillStyle.skipFill ? [] : createSolidFillStrokes(section, lineSpacing, inset, fillAngleDegrees);
+// createSolidFillStrokes flips every second line direction for serpentine drawing
 ```
 
 ### 4) Draw Color Strokes Progressively
