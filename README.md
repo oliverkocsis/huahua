@@ -38,13 +38,13 @@ Default sketch:
 Write each `sketch.md` for two audiences: artists (intent and visual language) and developers (reusable implementation patterns).
 
 Required structure:
-1. `Original Drawing Objective (Artist-Facing)`  
+1. `What Is Being Drawn?`  
 Describe the drawing goal in human words: mood, composition, movement, texture, and what should feel intentional to a visual artist.
-2. `Parameter Guide (Value-Agnostic)`  
+2. `What Parameters Are Used?`  
 Explain what each parameter controls and how changing it affects the output. Do not hardcode exact production values in prose. You may use example ranges or sample values for illustration only.
-3. `Overall Drawing Strategy (Developer-Facing)`  
-Provide a step-by-step strategy from setup to finish so the algorithm can be reused in other doodles.
-4. `Detailed Steps + Reusable Snippets (Developer-Facing)`  
+3. `Drawing Strategy`  
+Provide a step-by-step strategy from setup to finish so the approach can be reused in other doodles.
+4. `Algorithms`  
 For each step, add concise explanation plus example code that can be copied/adapted.
 
 Parameter rules:
@@ -54,20 +54,20 @@ Parameter rules:
 
 Recommended section template for each `sketch.md`:
 - `# <Sketch Name>`
-- `## Original Drawing Objective (Artist-Facing)`
-- `## Parameter Guide (Value-Agnostic)`
-- `## Overall Drawing Strategy (Developer-Facing)`
-- `## Detailed Steps + Reusable Snippets`
+- `## What Is Being Drawn?`
+- `## What Parameters Are Used?`
+- `## Drawing Strategy`
+- `## Algorithms`
 
 Prompt template (copy/paste):
 ```md
 Create or revise `/<sketch-name>/sketch.md` for two audiences: artists and developers.
 
 Requirements:
-1. Original Drawing Objective (artist-facing): describe the intended visual result in natural, human language.
-2. Parameter Guide (value-agnostic): explain each parameter’s role and impact without locking prose to exact values. Include optional example ranges or sample values only.
-3. Overall Drawing Strategy (developer-facing): explain the algorithm step by step so it can be reused in other doodles.
-4. Detailed Steps + Reusable Snippets (developer-facing): provide per-step explanations with example code snippets.
+1. What Is Being Drawn?: describe the intended visual result in natural, human language.
+2. What Parameters Are Used?: explain each parameter’s role and impact without locking prose to exact values. Include optional example ranges or sample values only.
+3. Drawing Strategy: explain the approach step by step so it can be reused in other doodles.
+4. Algorithms: provide per-step explanations with example code snippets.
 
 Rules:
 - Keep exact active values in `sketch.js` constants at the top of the file.
