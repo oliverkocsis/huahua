@@ -1,300 +1,608 @@
-const pebblePalette = [
-  [128, 110, 93, 48],
-  [110, 94, 78, 46],
-  [148, 129, 112, 44],
-  [95, 82, 70, 44],
-  [170, 152, 133, 40],
-];
-
 const sketchCredits = {
-  title: "doodle diary vol.90",
-  author: "@camellia_doodle",
-  url: "https://www.instagram.com/p/DTQC1gpE-6S/",
+  title: "Composition with large red plane, yellow, black, gray and blue",
+  author: "Piet Mondriaan",
+  url: "https://www.kunstmuseum.nl/en/collection/composition-large-red-plane-yellow-black-gray-and-blue",
 };
 
 registerSketchCredits(sketchCredits);
 
-const bgColor = [246, 241, 232];
-const pebbles = [];
-let centerX = 0;
-let centerY = 0;
-let failedPlacements = 0;
-let isFull = false;
-let activePebble = null;
+const AREA_MIN_RATIO = 0.01;
+const AREA_MAX_RATIO = 0.05;
+const RECT_RATIO_MIN = 0.50;
+const RECT_RATIO_MAX = 2.00;
+const COMPOSITION_MARGIN_RATIO = 0.06;
+const COMPOSITION_MARGIN_MIN = 32;
+const COMPOSITION_MARGIN_MAX = 96;
+const FILL_ANGLE_MIN_DEGREES = -60;
+const FILL_ANGLE_MAX_DEGREES = -30;
+const FILL_STROKE_WEIGHT_MULTIPLIER = 2.4;
+const FILL_SPACING_MIN_PX = 2.8;
+const FILL_SPACING_MAX_PX = 4.8;
+const FILL_SPACING_MIN_SCALE = 0.0032;
+const FILL_SPACING_MAX_SCALE = 0.0058;
+const PIXEL_STEP_DISTANCE = 2;
+const HUMAN_PIXEL_STEPS_PER_FRAME = 4;
+const CORNER_RADIUS_MIN_SCALE = 0.1;
+const CORNER_RADIUS_MAX_SCALE = 0.2;
+const ARC_SEGMENT_MIN_LENGTH = 2.2;
+const WHITE_RECTANGLE_PROBABILITY = 0.40;
+const BLACK_FILL_PROBABILITY = 0.05;
+const WHITE_FILL_COLOR = [250, 249, 245, 230];
+const BLACK_FILL_COLOR = [20, 20, 20, 235];
+const BG_COLOR = [246, 244, 238];
+const GRID_COLOR = [24, 24, 24, 230];
+const RED_PASTEL_SHADES = [
+  [238, 122, 114],
+  [232, 108, 102],
+  [246, 136, 126],
+];
+const YELLOW_PASTEL_SHADES = [
+  [245, 214, 104],
+  [250, 222, 118],
+  [239, 204, 92],
+];
+const BLUE_PASTEL_SHADES = [
+  [128, 172, 236],
+  [117, 163, 229],
+  [141, 184, 242],
+];
+
+let mondrianRectangles = [];
+let currentRectangleIndex = 0;
+let borderWeight = 6;
+let fillerLineWeight = 1.5;
+let outlineSegments = [];
+let currentOutlineIndex = 0;
+let currentOutlineProgress = 0;
+let drawPhase = "outlines";
+let isComplete = false;
+let sketchFillPalette = [];
 
 function setup() {
   createCanvas(windowWidth, windowHeight);
   frameRate(60);
-  startCluster();
+  buildMondrianComposition();
 }
 
 function draw() {
-  if (activePebble) {
-    animatePebbleDrawing(activePebble);
-    return;
-  }
+  if (isComplete) return;
 
-  if (isFull) return;
+  const isHumanSpeed = getMainSpeedMode() === 1;
+  let remainingDistance = getDrawDistancePerFrame();
+  if (isHumanSpeed) remainingDistance = min(remainingDistance, PIXEL_STEP_DISTANCE * HUMAN_PIXEL_STEPS_PER_FRAME);
 
-  if (shouldSkipPlacementFrame(frameCount)) return;
-
-  const next = findNextPebble();
-  if (!next) {
-    failedPlacements += 1;
-    if (failedPlacements >= 40) {
-      isFull = true;
-      noLoop();
+  while (remainingDistance > 0) {
+    if (drawPhase === "outlines") {
+      const outlineConsumed = drawNextOutlineDistance(remainingDistance, isHumanSpeed);
+      if (outlineConsumed > 0) {
+        remainingDistance -= outlineConsumed;
+        if (isHumanSpeed) break;
+        continue;
+      }
+      drawPhase = "fills";
+      continue;
     }
-    return;
+
+    if (currentRectangleIndex >= mondrianRectangles.length) break;
+
+    const section = mondrianRectangles[currentRectangleIndex];
+    const consumed = drawNextStrokeDistance(section, remainingDistance, isHumanSpeed);
+    if (consumed > 0) {
+      remainingDistance -= consumed;
+      if (isHumanSpeed) break;
+    } else {
+      currentRectangleIndex += 1;
+    }
   }
 
-  failedPlacements = 0;
-  pebbles.push(next);
-  activePebble = next;
+  if (drawPhase === "fills" && currentRectangleIndex >= mondrianRectangles.length) {
+    isComplete = true;
+    noLoop();
+  }
 }
 
-function startCluster() {
-  background(...bgColor);
-  pebbles.length = 0;
-  centerX = width * 0.5;
-  centerY = height * 0.5;
-  failedPlacements = 0;
-  isFull = false;
-  activePebble = null;
+function buildMondrianComposition() {
+  background(...BG_COLOR);
+  fillerLineWeight = constrain(min(width, height) * 0.0018, 0.8, 1.4);
+  borderWeight = fillerLineWeight * 4;
+  sketchFillPalette = buildSketchFillPalette();
+  mondrianRectangles = generateMondrianRectangles().map((section) => createFillPlan(section));
+  mondrianRectangles.sort((a, b) => {
+    if (abs(a.y - b.y) > 0.5) return a.y - b.y;
+    return a.x - b.x;
+  });
+  outlineSegments = createOutlineSegments(mondrianRectangles);
+  currentOutlineIndex = 0;
+  currentOutlineProgress = 0;
+  drawPhase = "outlines";
+  currentRectangleIndex = 0;
+  isComplete = false;
   loop();
-
-  const seed = createPebble(centerX, centerY, random(34, 56));
-  pebbles.push(seed);
-  activePebble = seed;
 }
 
-function findNextPebble() {
-  let best = null;
-  let bestScore = -Infinity;
-  const attempts = 300;
+function generateMondrianRectangles() {
+  const margin = getCompositionMargin();
+  const composition = {
+    x: margin,
+    y: margin,
+    w: max(10, width - margin * 2),
+    h: max(10, height - margin * 2),
+  };
+  const compositionArea = composition.w * composition.h;
+  const minArea = compositionArea * AREA_MIN_RATIO;
+  const maxArea = compositionArea * AREA_MAX_RATIO;
+  const root = composition;
 
-  for (let i = 0; i < attempts; i += 1) {
-    const parent = pickRandomParent();
-    const candidate = createPebble(0, 0, random(18, 46));
-    const angle = pickNeighborAngle(parent);
-    const centerDistance = parent.packingRadius + candidate.packingRadius;
-    candidate.x = parent.x + cos(angle) * centerDistance;
-    candidate.y = parent.y + sin(angle) * centerDistance;
+  for (let attempt = 0; attempt < 120; attempt += 1) {
+    const sections = [root];
+    let failed = false;
+    let guard = 0;
 
-    if (!fitsInViewport(candidate.x, candidate.y, candidate.packingRadius)) continue;
-    if (overlapsExisting(candidate)) continue;
+    while (true) {
+      guard += 1;
+      if (guard > 600) {
+        failed = true;
+        break;
+      }
 
-    const contacts = countTouchingNeighbors(candidate);
-    const outward = dist(centerX, centerY, candidate.x, candidate.y);
-    const score = contacts * 100 + outward * 0.05 + random(0, 0.2);
+      let largestIndex = -1;
+      let largestArea = 0;
+      for (let i = 0; i < sections.length; i += 1) {
+        const area = getArea(sections[i]);
+        if (area > maxArea && area > largestArea) {
+          largestArea = area;
+          largestIndex = i;
+        }
+      }
 
-    if (score > bestScore) {
-      bestScore = score;
-      best = candidate;
+      if (largestIndex === -1) break;
+
+      const split = splitSection(sections[largestIndex], minArea);
+      if (!split) {
+        failed = true;
+        break;
+      }
+
+      sections.splice(largestIndex, 1, split[0], split[1]);
+    }
+
+    if (failed) continue;
+
+    const valid = sections.every((section) => isSectionFinalValid(section, minArea, maxArea));
+
+    if (valid) return sections;
+  }
+
+  return createFallbackGrid(root);
+}
+
+function splitSection(section, minArea) {
+  const orientations = shuffleValues(["vertical", "horizontal"]);
+  for (const orientation of orientations) {
+    const split = splitWithOrientation(section, minArea, orientation);
+    if (split) return split;
+  }
+  return null;
+}
+
+function splitWithOrientation(section, minArea, orientation) {
+  if (orientation === "vertical") {
+    const minWidth = minArea / section.h;
+    const maxWidth = section.w - minWidth;
+    if (maxWidth <= minWidth) return null;
+
+    for (let attempt = 0; attempt < 36; attempt += 1) {
+      const cutX = random(minWidth, maxWidth);
+      const left = { x: section.x, y: section.y, w: cutX, h: section.h };
+      const right = { x: section.x + cutX, y: section.y, w: section.w - cutX, h: section.h };
+      if (isSectionShapeValid(left) && isSectionShapeValid(right)) return [left, right];
+    }
+    return null;
+  }
+
+  const minHeight = minArea / section.w;
+  const maxHeight = section.h - minHeight;
+  if (maxHeight <= minHeight) return null;
+
+  for (let attempt = 0; attempt < 36; attempt += 1) {
+    const cutY = random(minHeight, maxHeight);
+    const top = { x: section.x, y: section.y, w: section.w, h: cutY };
+    const bottom = { x: section.x, y: section.y + cutY, w: section.w, h: section.h - cutY };
+    if (isSectionShapeValid(top) && isSectionShapeValid(bottom)) return [top, bottom];
+  }
+
+  return null;
+}
+
+function createFallbackGrid(bounds) {
+  const rows = 5;
+  const columns = 5;
+  const cellWidth = bounds.w / columns;
+  const cellHeight = bounds.h / rows;
+  const sections = [];
+
+  for (let row = 0; row < rows; row += 1) {
+    for (let column = 0; column < columns; column += 1) {
+      sections.push({
+        x: bounds.x + column * cellWidth,
+        y: bounds.y + row * cellHeight,
+        w: cellWidth,
+        h: cellHeight,
+      });
     }
   }
 
-  return best;
+  return sections;
 }
 
-function pickRandomParent() {
-  // Bias toward outer pebbles so growth moves from inside out.
-  let totalWeight = 0;
-  for (const pebble of pebbles) {
-    pebble._w = pow(dist(centerX, centerY, pebble.x, pebble.y) + 12, 1.25);
-    totalWeight += pebble._w;
-  }
-
-  let target = random(totalWeight);
-  for (const pebble of pebbles) {
-    target -= pebble._w;
-    if (target <= 0) return pebble;
-  }
-  return pebbles[pebbles.length - 1];
-}
-
-function pickNeighborAngle(parent) {
-  const outward = atan2(parent.y - centerY, parent.x - centerX);
-  if (dist(centerX, centerY, parent.x, parent.y) < 8) {
-    return random(TWO_PI);
-  }
-  return outward + random(-PI * 0.9, PI * 0.9);
-}
-
-function overlapsExisting(candidate) {
-  for (const pebble of pebbles) {
-    const target = pebble.packingRadius + candidate.packingRadius;
-    if (dist(candidate.x, candidate.y, pebble.x, pebble.y) < target - 0.35) {
-      return true;
-    }
-  }
-  return false;
-}
-
-function countTouchingNeighbors(candidate) {
-  let count = 0;
-  for (const pebble of pebbles) {
-    const d = dist(candidate.x, candidate.y, pebble.x, pebble.y);
-    const target = candidate.packingRadius + pebble.packingRadius;
-    if (abs(d - target) <= 1.2) count += 1;
-  }
-  return count;
-}
-
-function fitsInViewport(x, y, radius) {
-  const margin = 2;
-  return x - radius > margin && x + radius < width - margin && y - radius > margin && y + radius < height - margin;
-}
-
-function createPebble(x, y, radius) {
-  const points = [];
-  const segments = floor(random(10, 18));
-  const [r, g, b, a] = random(pebblePalette);
-
-  for (let i = 0; i < segments; i += 1) {
-    const angle = map(i, 0, segments, 0, TWO_PI);
-    const edge = radius * random(0.78, 0.98);
-    points.push({ x: cos(angle) * edge, y: sin(angle) * edge });
-  }
-
-  const smoothPoints = smoothClosedPoints(points, 2);
-  const perimeter = calculateLoopPerimeter(smoothPoints);
-  const packingRadius = calculatePackingRadius(smoothPoints);
+function createFillPlan(section) {
+  const inset = borderWeight * 0.7;
+  const fillStyle = pickRectangleFillStyle();
+  const spacingBounds = getFillSpacingBounds();
+  const lineSpacing = random(spacingBounds.min, spacingBounds.max);
+  const fillAngleDegrees = random(FILL_ANGLE_MIN_DEGREES, FILL_ANGLE_MAX_DEGREES);
+  const lines = fillStyle.skipFill ? [] : createSolidFillStrokes(section, lineSpacing, inset, fillAngleDegrees);
 
   return {
-    x,
-    y,
-    r: radius,
-    packingRadius,
-    points: smoothPoints,
-    color: [r, g, b, a],
-    angle: random(TWO_PI),
-    strokeW: random(0.7, 1.2),
-    perimeter,
-    drawProgress: 0,
-    drawSpeed: max(2.2, radius * 0.2),
+    ...section,
+    cornerRadii: pickRandomCornerRadii(section.w, section.h),
+    fillColor: fillStyle.fillColor,
+    skipFill: fillStyle.skipFill,
+    fillAngleDegrees,
+    lines,
+    currentLineIndex: 0,
+    currentLineProgress: 0,
   };
 }
 
-function animatePebbleDrawing(pebble) {
-  const from = pebble.drawProgress;
-  pebble.drawProgress = min(pebble.perimeter, pebble.drawProgress + getSpeedAdjustedIncrement(pebble.drawSpeed));
-  drawPebbleStrokeRange(pebble, from, pebble.drawProgress);
+function createOutlineSegments(sections) {
+  const segments = [];
+  for (const section of sections) {
+    const cornerRadii = section.cornerRadii || { tl: 0, tr: 0, br: 0, bl: 0 };
+    const x = section.x;
+    const y = section.y;
+    const w = section.w;
+    const h = section.h;
+    const tl = cornerRadii.tl || 0;
+    const tr = cornerRadii.tr || 0;
+    const br = cornerRadii.br || 0;
+    const bl = cornerRadii.bl || 0;
 
-  if (pebble.drawProgress >= pebble.perimeter) {
-    finalizePebble(pebble);
-    activePebble = null;
+    pushSegment(segments, x + tl, y, x + w - tr, y);
+    addArcSegments(segments, x + w - tr, y + tr, tr, -HALF_PI, 0);
+    pushSegment(segments, x + w, y + tr, x + w, y + h - br);
+    addArcSegments(segments, x + w - br, y + h - br, br, 0, HALF_PI);
+    pushSegment(segments, x + w - br, y + h, x + bl, y + h);
+    addArcSegments(segments, x + bl, y + h - bl, bl, HALF_PI, PI);
+    pushSegment(segments, x, y + h - bl, x, y + tl);
+    addArcSegments(segments, x + tl, y + tl, tl, PI, PI + HALF_PI);
+  }
+  return segments;
+}
+
+function createSegment(x1, y1, x2, y2) {
+  return {
+    x1,
+    y1,
+    x2,
+    y2,
+    length: dist(x1, y1, x2, y2),
+  };
+}
+
+function pickRandomCornerRadii(width, height) {
+  const shortestEdge = min(width, height);
+  const minRadius = max(0.8, shortestEdge * CORNER_RADIUS_MIN_SCALE);
+  const maxRadius = max(minRadius, shortestEdge * CORNER_RADIUS_MAX_SCALE);
+  const radii = {
+    tl: random(minRadius, maxRadius),
+    tr: random(minRadius, maxRadius),
+    br: random(minRadius, maxRadius),
+    bl: random(minRadius, maxRadius),
+  };
+  return fitCornerRadiiToBounds(radii, width, height);
+}
+
+function fitCornerRadiiToBounds(radii, width, height) {
+  const fitted = { ...radii };
+  const widthLimit = max(0, width - 2);
+  const heightLimit = max(0, height - 2);
+
+  for (let pass = 0; pass < 2; pass += 1) {
+    [fitted.tl, fitted.tr] = fitRadiusPair(fitted.tl, fitted.tr, widthLimit);
+    [fitted.tr, fitted.br] = fitRadiusPair(fitted.tr, fitted.br, heightLimit);
+    [fitted.br, fitted.bl] = fitRadiusPair(fitted.br, fitted.bl, widthLimit);
+    [fitted.bl, fitted.tl] = fitRadiusPair(fitted.bl, fitted.tl, heightLimit);
+  }
+
+  return fitted;
+}
+
+function fitRadiusPair(a, b, limit) {
+  if (limit <= 0) return [0, 0];
+  const sum = a + b;
+  if (sum <= limit || sum <= 0.000001) return [a, b];
+  const scale = limit / sum;
+  return [a * scale, b * scale];
+}
+
+function addArcSegments(segments, centerX, centerY, radius, startAngle, endAngle) {
+  if (radius <= 0.001) return;
+  const arcLength = abs(endAngle - startAngle) * radius;
+  const steps = max(1, ceil(arcLength / ARC_SEGMENT_MIN_LENGTH));
+  let previousX = centerX + cos(startAngle) * radius;
+  let previousY = centerY + sin(startAngle) * radius;
+
+  for (let i = 1; i <= steps; i += 1) {
+    const angle = lerp(startAngle, endAngle, i / steps);
+    const nextX = centerX + cos(angle) * radius;
+    const nextY = centerY + sin(angle) * radius;
+    pushSegment(segments, previousX, previousY, nextX, nextY);
+    previousX = nextX;
+    previousY = nextY;
   }
 }
 
-function drawPebbleStrokeRange(pebble, fromDistance, toDistance) {
-  if (toDistance <= fromDistance) return;
+function pushSegment(segments, x1, y1, x2, y2) {
+  const segment = createSegment(x1, y1, x2, y2);
+  if (segment.length > 0.001) segments.push(segment);
+}
 
-  push();
-  translate(pebble.x, pebble.y);
-  rotate(pebble.angle);
-  noFill();
-  stroke(44, 35, 28, 110);
-  strokeWeight(pebble.strokeW);
-  strokeJoin(ROUND);
+function getFillSpacingBounds() {
+  const scale = min(width, height);
+  return {
+    min: max(FILL_SPACING_MIN_PX, scale * FILL_SPACING_MIN_SCALE),
+    max: max(FILL_SPACING_MAX_PX, scale * FILL_SPACING_MAX_SCALE),
+  };
+}
+
+function createSolidFillStrokes(section, spacing, inset, angleDegrees) {
+  const x = section.x + inset;
+  const y = section.y + inset;
+  const w = section.w - inset * 2;
+  const h = section.h - inset * 2;
+  if (w <= 1 || h <= 1) return [];
+
+  const angle = radians(angleDegrees);
+  const dx = cos(angle);
+  const dy = sin(angle);
+  const nx = -dy;
+  const ny = dx;
+  const diagonal = sqrt(w * w + h * h);
+  const centerX = x + w * 0.5;
+  const centerY = y + h * 0.5;
+  const corners = [
+    [x, y],
+    [x + w, y],
+    [x + w, y + h],
+    [x, y + h],
+  ];
+
+  let minOffset = Infinity;
+  let maxOffset = -Infinity;
+  for (const [cx, cy] of corners) {
+    const projection = (cx - centerX) * nx + (cy - centerY) * ny;
+    minOffset = min(minOffset, projection);
+    maxOffset = max(maxOffset, projection);
+  }
+
+  let offset = minOffset - random(spacing * 0.3, spacing);
+  const lines = [];
+  while (offset <= maxOffset + spacing) {
+    offset += spacing;
+    const jitter = random(-spacing * 0.14, spacing * 0.14);
+    const baseX = centerX + nx * (offset + jitter);
+    const baseY = centerY + ny * (offset + jitter);
+    const rawX1 = baseX - dx * diagonal;
+    const rawY1 = baseY - dy * diagonal;
+    const rawX2 = baseX + dx * diagonal;
+    const rawY2 = baseY + dy * diagonal;
+    const clipped = clipSegmentToRect(rawX1, rawY1, rawX2, rawY2, x, y, w, h);
+    if (clipped) {
+      const startX = clipped.x1 <= clipped.x2 ? clipped.x1 : clipped.x2;
+      const startY = clipped.x1 <= clipped.x2 ? clipped.y1 : clipped.y2;
+      const endX = clipped.x1 <= clipped.x2 ? clipped.x2 : clipped.x1;
+      const endY = clipped.x1 <= clipped.x2 ? clipped.y2 : clipped.y1;
+      const segment = createSegment(startX, startY, endX, endY);
+      if (segment.length > 0.001) lines.push(segment);
+    }
+  }
+  lines.sort((a, b) => {
+    const aTop = min(a.y1, a.y2);
+    const bTop = min(b.y1, b.y2);
+    if (abs(aTop - bTop) > 0.5) return aTop - bTop;
+    const aLeft = min(a.x1, a.x2);
+    const bLeft = min(b.x1, b.x2);
+    return aLeft - bLeft;
+  });
+  return lines;
+}
+
+function clipSegmentToRect(x1, y1, x2, y2, x, y, w, h) {
+  const dx = x2 - x1;
+  const dy = y2 - y1;
+  const p = [-dx, dx, -dy, dy];
+  const q = [x1 - x, x + w - x1, y1 - y, y + h - y1];
+  let t0 = 0;
+  let t1 = 1;
+
+  for (let i = 0; i < 4; i += 1) {
+    if (abs(p[i]) < 0.000001) {
+      if (q[i] < 0) return null;
+      continue;
+    }
+    const r = q[i] / p[i];
+    if (p[i] < 0) {
+      if (r > t1) return null;
+      if (r > t0) t0 = r;
+    } else {
+      if (r < t0) return null;
+      if (r < t1) t1 = r;
+    }
+  }
+
+  return {
+    x1: x1 + t0 * dx,
+    y1: y1 + t0 * dy,
+    x2: x1 + t1 * dx,
+    y2: y1 + t1 * dy,
+  };
+}
+
+function buildSketchFillPalette() {
+  return [RED_PASTEL_SHADES, YELLOW_PASTEL_SHADES, BLUE_PASTEL_SHADES].map((family) => {
+    const base = random(family);
+    return [
+      constrain(base[0] + random(-6, 6), 0, 255),
+      constrain(base[1] + random(-6, 6), 0, 255),
+      constrain(base[2] + random(-6, 6), 0, 255),
+      random(200, 238),
+    ];
+  });
+}
+
+function pickRectangleFillStyle() {
+  const roll = random();
+  if (roll < WHITE_RECTANGLE_PROBABILITY) {
+    return { fillColor: WHITE_FILL_COLOR.slice(), skipFill: true };
+  }
+  if (roll < WHITE_RECTANGLE_PROBABILITY + BLACK_FILL_PROBABILITY) {
+    return { fillColor: BLACK_FILL_COLOR.slice(), skipFill: false };
+  }
+
+  const base = random(sketchFillPalette);
+  if (!base) return { fillColor: BLACK_FILL_COLOR.slice(), skipFill: false };
+  return { fillColor: base.slice(), skipFill: false };
+}
+
+function drawNextStrokeDistance(section, distanceBudget, singleSegmentMode) {
+  if (section.currentLineIndex >= section.lines.length) return 0;
+
+  let consumed = 0;
   strokeCap(ROUND);
 
-  let traveled = 0;
-  for (let i = 0; i < pebble.points.length; i += 1) {
-    const a = pebble.points[i];
-    const b = pebble.points[(i + 1) % pebble.points.length];
-    const segmentLength = dist(a.x, a.y, b.x, b.y);
-    const segmentStart = traveled;
-    const segmentEnd = traveled + segmentLength;
-    const start = max(fromDistance, segmentStart);
-    const end = min(toDistance, segmentEnd);
-
-    if (end > start) {
-      const t1 = (start - segmentStart) / segmentLength;
-      const t2 = (end - segmentStart) / segmentLength;
-      line(lerp(a.x, b.x, t1), lerp(a.y, b.y, t1), lerp(a.x, b.x, t2), lerp(a.y, b.y, t2));
+  while (distanceBudget > 0 && section.currentLineIndex < section.lines.length) {
+    const segment = section.lines[section.currentLineIndex];
+    const segmentLength = segment.length;
+    if (segmentLength <= 0.001) {
+      section.currentLineIndex += 1;
+      section.currentLineProgress = 0;
+      continue;
     }
 
-    traveled = segmentEnd;
+    const remainingOnLine = segmentLength - section.currentLineProgress;
+    if (remainingOnLine <= 0.001) {
+      section.currentLineIndex += 1;
+      section.currentLineProgress = 0;
+      continue;
+    }
+
+    const step = min(remainingOnLine, distanceBudget, PIXEL_STEP_DISTANCE);
+    const nextProgress = section.currentLineProgress + step;
+    stroke(
+      constrain(section.fillColor[0] + random(-8, 8), 0, 255),
+      constrain(section.fillColor[1] + random(-8, 8), 0, 255),
+      constrain(section.fillColor[2] + random(-8, 8), 0, 255),
+      constrain(section.fillColor[3] + random(-16, 16), 120, 255)
+    );
+    strokeWeight(max(1.8, fillerLineWeight * FILL_STROKE_WEIGHT_MULTIPLIER + random(-0.20, 0.35)));
+    drawSegmentPortion(segment, section.currentLineProgress, nextProgress);
+    section.currentLineProgress = nextProgress;
+    distanceBudget -= step;
+    consumed += step;
+
+    if (section.currentLineProgress >= segmentLength - 0.001) {
+      section.currentLineIndex += 1;
+      section.currentLineProgress = 0;
+      if (singleSegmentMode) break;
+    }
   }
 
-  pop();
+  return consumed;
 }
 
-function finalizePebble(pebble) {
-  push();
-  translate(pebble.x, pebble.y);
-  rotate(pebble.angle);
+function drawSegmentPortion(segment, fromDistance, toDistance) {
+  const t1 = constrain(fromDistance / segment.length, 0, 1);
+  const t2 = constrain(toDistance / segment.length, 0, 1);
+  if (t2 <= t1) return;
 
-  fill(...pebble.color);
-  stroke(46, 36, 28, 95);
-  strokeWeight(pebble.strokeW);
-  strokeJoin(ROUND);
+  const x1 = lerp(segment.x1, segment.x2, t1);
+  const y1 = lerp(segment.y1, segment.y2, t1);
+  const x2 = lerp(segment.x1, segment.x2, t2);
+  const y2 = lerp(segment.y1, segment.y2, t2);
+  line(x1, y1, x2, y2);
+}
+
+function drawNextOutlineDistance(distanceBudget, singleSegmentMode) {
+  if (currentOutlineIndex >= outlineSegments.length) return 0;
+
+  let consumed = 0;
+  stroke(...GRID_COLOR);
   strokeCap(ROUND);
+  strokeJoin(ROUND);
 
-  beginShape();
-  for (let i = -2; i < pebble.points.length + 2; i += 1) {
-    const point = pebble.points[(i + pebble.points.length) % pebble.points.length];
-    curveVertex(point.x, point.y);
-  }
-  endShape(CLOSE);
-
-  stroke(255, 255, 255, 30);
-  strokeWeight(0.7);
-  line(-pebble.r * 0.25, -pebble.r * 0.12, pebble.r * 0.2, -pebble.r * 0.2);
-  pop();
-}
-
-function mousePressed(event) {
-  if (event && event.target && (event.target.closest(".main-controls") || event.target.closest(".main-credit"))) return;
-  startCluster();
-}
-
-function windowResized() {
-  resizeCanvas(windowWidth, windowHeight);
-  startCluster();
-}
-
-function smoothClosedPoints(inputPoints, iterations) {
-  let smoothed = inputPoints.slice();
-
-  for (let iteration = 0; iteration < iterations; iteration += 1) {
-    const next = [];
-    for (let index = 0; index < smoothed.length; index += 1) {
-      const current = smoothed[index];
-      const nextPoint = smoothed[(index + 1) % smoothed.length];
-      next.push({
-        x: current.x * 0.75 + nextPoint.x * 0.25,
-        y: current.y * 0.75 + nextPoint.y * 0.25,
-      });
-      next.push({
-        x: current.x * 0.25 + nextPoint.x * 0.75,
-        y: current.y * 0.25 + nextPoint.y * 0.75,
-      });
+  while (distanceBudget > 0 && currentOutlineIndex < outlineSegments.length) {
+    const segment = outlineSegments[currentOutlineIndex];
+    const segmentLength = segment.length;
+    if (segmentLength <= 0.001) {
+      currentOutlineIndex += 1;
+      currentOutlineProgress = 0;
+      continue;
     }
-    smoothed = next;
+
+    const remainingOnSegment = segmentLength - currentOutlineProgress;
+    if (remainingOnSegment <= 0.001) {
+      currentOutlineIndex += 1;
+      currentOutlineProgress = 0;
+      continue;
+    }
+
+    const step = min(remainingOnSegment, distanceBudget, PIXEL_STEP_DISTANCE);
+    const nextProgress = currentOutlineProgress + step;
+    strokeWeight(max(1.2, borderWeight + random(-0.25, 0.25)));
+    drawSegmentPortion(segment, currentOutlineProgress, nextProgress);
+    currentOutlineProgress = nextProgress;
+    distanceBudget -= step;
+    consumed += step;
+
+    if (currentOutlineProgress >= segmentLength - 0.001) {
+      currentOutlineIndex += 1;
+      currentOutlineProgress = 0;
+      if (singleSegmentMode) break;
+    }
   }
 
-  return smoothed;
+  return consumed;
 }
 
-function calculateLoopPerimeter(points) {
-  let perimeter = 0;
-  for (let index = 0; index < points.length; index += 1) {
-    const current = points[index];
-    const nextPoint = points[(index + 1) % points.length];
-    perimeter += dist(current.x, current.y, nextPoint.x, nextPoint.y);
-  }
-  return perimeter;
+function getArea(section) {
+  return section.w * section.h;
 }
 
-function calculatePackingRadius(points) {
-  let maxDistance = 0;
-  for (const point of points) {
-    const pointDistance = dist(0, 0, point.x, point.y);
-    if (pointDistance > maxDistance) maxDistance = pointDistance;
+function getCompositionMargin() {
+  return constrain(min(width, height) * COMPOSITION_MARGIN_RATIO, COMPOSITION_MARGIN_MIN, COMPOSITION_MARGIN_MAX);
+}
+
+function isSectionShapeValid(section) {
+  const ratio = section.w / section.h;
+  return ratio >= RECT_RATIO_MIN && ratio <= RECT_RATIO_MAX;
+}
+
+function isSectionFinalValid(section, minArea, maxArea) {
+  const area = getArea(section);
+  if (area < minArea - 0.5 || area > maxArea + 0.5) return false;
+  return isSectionShapeValid(section);
+}
+
+function shuffleValues(values) {
+  const shuffled = values.slice();
+  for (let i = shuffled.length - 1; i > 0; i -= 1) {
+    const j = floor(random(i + 1));
+    const tmp = shuffled[i];
+    shuffled[i] = shuffled[j];
+    shuffled[j] = tmp;
   }
-  return maxDistance;
+  return shuffled;
 }
 
 function getMainSpeedMode() {
@@ -307,27 +615,28 @@ function getMainSpeedMode() {
   return 1;
 }
 
-function shouldSkipPlacementFrame(frameIndex) {
-  if (window.HUAHUA_APP && typeof window.HUAHUA_APP.shouldSkipPlacementFrame === "function") {
-    return window.HUAHUA_APP.shouldSkipPlacementFrame(frameIndex);
+function getDrawDistancePerFrame() {
+  const scale = min(width, height);
+  if (window.HUAHUA_APP && typeof window.HUAHUA_APP.getDrawDistancePerFrame === "function") {
+    return window.HUAHUA_APP.getDrawDistancePerFrame(scale);
   }
-  return getMainSpeedMode() === 1 && frameIndex % 3 !== 0;
+
+  const speedMode = getMainSpeedMode();
+  if (speedMode === 1) return max(8, scale * 0.02);
+  if (speedMode === 2) return max(24, scale * 0.055);
+  let burst = max(54, scale * 0.12);
+  if (random() < 0.35) burst += max(28, scale * random(0.08, 0.2));
+  return burst;
 }
 
-function getSpeedAdjustedIncrement(baseIncrement) {
-  if (window.HUAHUA_APP && typeof window.HUAHUA_APP.getStrokeIncrement === "function") {
-    return window.HUAHUA_APP.getStrokeIncrement(baseIncrement);
-  }
-  const speedMode = getMainSpeedMode();
-  if (speedMode === 1) return baseIncrement * 0.5;
-  if (speedMode === 2) return baseIncrement * 2;
+function mousePressed(event) {
+  if (event && event.target && (event.target.closest(".main-controls") || event.target.closest(".main-credit"))) return;
+  buildMondrianComposition();
+}
 
-  let increment = baseIncrement * 4;
-  // 4x keeps the 2x base pace, then jumps ahead more often and farther.
-  if (random() < 0.5) {
-    increment += baseIncrement * random(10, 50);
-  }
-  return increment;
+function windowResized() {
+  resizeCanvas(windowWidth, windowHeight);
+  buildMondrianComposition();
 }
 
 function registerSketchCredits(credits) {

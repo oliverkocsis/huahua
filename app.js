@@ -2,7 +2,9 @@
   const SKETCHES = [
     { id: "mondriaan", label: "Mondriaan", script: "./mondriaan/sketch.js", pageTitle: "Huahua Mondriaan" },
     { id: "pebbles", label: "Pebbles", script: "./pebbles/sketch.js", pageTitle: "Huahua Pebbles" },
+    { id: "circles", label: "Circles", script: "./circles/sketch.js", pageTitle: "Huahua Circles" },
   ];
+  const LEGACY_SKETCH_IDS = {};
   const DEFAULT_SKETCH_ID = "mondriaan";
   const speedControl = document.querySelector(".speed-control");
   const speedCurrentButton = document.querySelector(".speed-current");
@@ -169,7 +171,9 @@
 
   function getSketchFromUrl() {
     const params = new URLSearchParams(window.location.search);
-    return getSketchById(params.get("sketch")) || getSketchById(DEFAULT_SKETCH_ID);
+    const requested = params.get("sketch");
+    const normalized = LEGACY_SKETCH_IDS[requested] || requested;
+    return getSketchById(normalized) || getSketchById(DEFAULT_SKETCH_ID);
   }
 
   function populateSketchSelect(activeSketchId) {
