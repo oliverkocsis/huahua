@@ -48,10 +48,12 @@ let mondrianRectangles = [];
 let currentRectangleIndex = 0;
 let borderWeight = 6;
 let fillerLineWeight = 1.5;
-let outlineSegments = [];
-let currentOutlineIndex = 0;
-let currentOutlineProgress = 0;
-let drawPhase = "outlines";
+let splitSections = [];
+let splitMinArea = 0;
+let splitMaxArea = 0;
+let activeSplit = null;
+let activeSplitProgress = 0;
+let drawPhase = "splits";
 let isComplete = false;
 let sketchFillPalette = [];
 
@@ -69,14 +71,14 @@ function draw() {
   if (isHumanSpeed) remainingDistance = min(remainingDistance, PIXEL_STEP_DISTANCE * HUMAN_PIXEL_STEPS_PER_FRAME);
 
   while (remainingDistance > 0) {
-    if (drawPhase === "outlines") {
-      const outlineConsumed = drawNextOutlineDistance(remainingDistance, isHumanSpeed);
-      if (outlineConsumed > 0) {
-        remainingDistance -= outlineConsumed;
+    if (drawPhase === "splits") {
+      const splitConsumed = drawNextSplitDistance(remainingDistance, isHumanSpeed);
+      if (splitConsumed > 0) {
+        remainingDistance -= splitConsumed;
         if (isHumanSpeed) break;
         continue;
       }
-      drawPhase = "fills";
+      finalizeSplitPhase();
       continue;
     }
 
@@ -92,7 +94,7 @@ function draw() {
     }
   }
 
-  if (drawPhase === "fills" && currentRectangleIndex >= mondrianRectangles.length) {
+  if (drawPhase !== "splits" && currentRectangleIndex >= mondrianRectangles.length) {
     isComplete = true;
     noLoop();
   }
@@ -103,74 +105,32 @@ function buildMondrianComposition() {
   fillerLineWeight = constrain(min(width, height) * 0.0018, 0.8, 1.4);
   borderWeight = fillerLineWeight * 4;
   sketchFillPalette = buildSketchFillPalette();
-  mondrianRectangles = generateMondrianRectangles().map((section) => createFillPlan(section));
-  mondrianRectangles.sort((a, b) => {
-    if (abs(a.y - b.y) > 0.5) return a.y - b.y;
-    return a.x - b.x;
-  });
-  outlineSegments = createOutlineSegments(mondrianRectangles);
-  currentOutlineIndex = 0;
-  currentOutlineProgress = 0;
-  drawPhase = "outlines";
+  const composition = getCompositionBounds();
+  const compositionArea = composition.w * composition.h;
+  splitMinArea = compositionArea * AREA_MIN_RATIO;
+  splitMaxArea = compositionArea * AREA_MAX_RATIO;
+  splitSections = [composition];
+  activeSplit = null;
+  activeSplitProgress = 0;
+  drawPhase = "splits";
+  mondrianRectangles = [];
   currentRectangleIndex = 0;
   isComplete = false;
+  stroke(...GRID_COLOR);
+  strokeWeight(max(1.2, borderWeight + random(-0.25, 0.25)));
+  noFill();
+  rect(composition.x, composition.y, composition.w, composition.h);
   loop();
 }
 
-function generateMondrianRectangles() {
+function getCompositionBounds() {
   const margin = getCompositionMargin();
-  const composition = {
+  return {
     x: margin,
     y: margin,
     w: max(10, width - margin * 2),
     h: max(10, height - margin * 2),
   };
-  const compositionArea = composition.w * composition.h;
-  const minArea = compositionArea * AREA_MIN_RATIO;
-  const maxArea = compositionArea * AREA_MAX_RATIO;
-  const root = composition;
-
-  for (let attempt = 0; attempt < 120; attempt += 1) {
-    const sections = [root];
-    let failed = false;
-    let guard = 0;
-
-    while (true) {
-      guard += 1;
-      if (guard > 600) {
-        failed = true;
-        break;
-      }
-
-      let largestIndex = -1;
-      let largestArea = 0;
-      for (let i = 0; i < sections.length; i += 1) {
-        const area = getArea(sections[i]);
-        if (area > maxArea && area > largestArea) {
-          largestArea = area;
-          largestIndex = i;
-        }
-      }
-
-      if (largestIndex === -1) break;
-
-      const split = splitSection(sections[largestIndex], minArea);
-      if (!split) {
-        failed = true;
-        break;
-      }
-
-      sections.splice(largestIndex, 1, split[0], split[1]);
-    }
-
-    if (failed) continue;
-
-    const valid = sections.every((section) => isSectionFinalValid(section, minArea, maxArea));
-
-    if (valid) return sections;
-  }
-
-  return createFallbackGrid(root);
 }
 
 function splitSection(section, minArea) {
@@ -192,7 +152,13 @@ function splitWithOrientation(section, minArea, orientation) {
       const cutX = random(minWidth, maxWidth);
       const left = { x: section.x, y: section.y, w: cutX, h: section.h };
       const right = { x: section.x + cutX, y: section.y, w: section.w - cutX, h: section.h };
-      if (isSectionShapeValid(left) && isSectionShapeValid(right)) return [left, right];
+      if (isSectionShapeValid(left) && isSectionShapeValid(right)) {
+        return {
+          first: left,
+          second: right,
+          splitLine: createSegment(section.x + cutX, section.y, section.x + cutX, section.y + section.h),
+        };
+      }
     }
     return null;
   }
@@ -205,31 +171,16 @@ function splitWithOrientation(section, minArea, orientation) {
     const cutY = random(minHeight, maxHeight);
     const top = { x: section.x, y: section.y, w: section.w, h: cutY };
     const bottom = { x: section.x, y: section.y + cutY, w: section.w, h: section.h - cutY };
-    if (isSectionShapeValid(top) && isSectionShapeValid(bottom)) return [top, bottom];
-  }
-
-  return null;
-}
-
-function createFallbackGrid(bounds) {
-  const rows = 5;
-  const columns = 5;
-  const cellWidth = bounds.w / columns;
-  const cellHeight = bounds.h / rows;
-  const sections = [];
-
-  for (let row = 0; row < rows; row += 1) {
-    for (let column = 0; column < columns; column += 1) {
-      sections.push({
-        x: bounds.x + column * cellWidth,
-        y: bounds.y + row * cellHeight,
-        w: cellWidth,
-        h: cellHeight,
-      });
+    if (isSectionShapeValid(top) && isSectionShapeValid(bottom)) {
+      return {
+        first: top,
+        second: bottom,
+        splitLine: createSegment(section.x, section.y + cutY, section.x + section.w, section.y + cutY),
+      };
     }
   }
 
-  return sections;
+  return null;
 }
 
 function createFillPlan(section) {
@@ -249,17 +200,6 @@ function createFillPlan(section) {
     currentLineIndex: 0,
     currentLineProgress: 0,
   };
-}
-
-function createOutlineSegments(sections) {
-  const segments = [];
-  for (const section of sections) {
-    segments.push(createSegment(section.x, section.y, section.x + section.w, section.y));
-    segments.push(createSegment(section.x + section.w, section.y, section.x + section.w, section.y + section.h));
-    segments.push(createSegment(section.x + section.w, section.y + section.h, section.x, section.y + section.h));
-    segments.push(createSegment(section.x, section.y + section.h, section.x, section.y));
-  }
-  return segments;
 }
 
 function createSegment(x1, y1, x2, y2) {
@@ -399,6 +339,105 @@ function pickRectangleFillStyle() {
   return { fillColor: base.slice(), skipFill: false };
 }
 
+function drawNextSplitDistance(distanceBudget, singleSegmentMode) {
+  let consumed = 0;
+  stroke(...GRID_COLOR);
+  strokeCap(ROUND);
+  strokeJoin(ROUND);
+
+  while (distanceBudget > 0) {
+    if (!activeSplit) {
+      const prepared = prepareNextSplit();
+      if (!prepared) break;
+    }
+
+    const segment = activeSplit.splitLine;
+    const segmentLength = segment.length;
+    if (segmentLength <= 0.001) {
+      applyActiveSplit();
+      if (singleSegmentMode) break;
+      continue;
+    }
+
+    const remainingOnSegment = segmentLength - activeSplitProgress;
+    if (remainingOnSegment <= 0.001) {
+      applyActiveSplit();
+      if (singleSegmentMode) break;
+      continue;
+    }
+
+    const step = min(remainingOnSegment, distanceBudget, PIXEL_STEP_DISTANCE);
+    const nextProgress = activeSplitProgress + step;
+    strokeWeight(max(1.2, borderWeight + random(-0.25, 0.25)));
+    drawSegmentPortion(segment, activeSplitProgress, nextProgress);
+    activeSplitProgress = nextProgress;
+    distanceBudget -= step;
+    consumed += step;
+
+    if (activeSplitProgress >= segmentLength - 0.001) {
+      applyActiveSplit();
+      if (singleSegmentMode) break;
+    }
+  }
+
+  return consumed;
+}
+
+function prepareNextSplit() {
+  while (true) {
+    const largestIndex = findLargestSplittableIndex(splitSections, splitMaxArea);
+    if (largestIndex === -1) return false;
+
+    const candidate = splitSections[largestIndex];
+    const split = splitSection(candidate, splitMinArea);
+    if (!split) {
+      candidate.canSplit = false;
+      continue;
+    }
+
+    activeSplit = {
+      sectionIndex: largestIndex,
+      first: split.first,
+      second: split.second,
+      splitLine: split.splitLine,
+    };
+    activeSplitProgress = 0;
+    return true;
+  }
+}
+
+function findLargestSplittableIndex(sections, maxArea) {
+  let largestIndex = -1;
+  let largestArea = 0;
+  for (let i = 0; i < sections.length; i += 1) {
+    const section = sections[i];
+    if (section.canSplit === false) continue;
+    const area = getArea(section);
+    if (area > maxArea && area > largestArea) {
+      largestArea = area;
+      largestIndex = i;
+    }
+  }
+  return largestIndex;
+}
+
+function applyActiveSplit() {
+  if (!activeSplit) return;
+  splitSections.splice(activeSplit.sectionIndex, 1, activeSplit.first, activeSplit.second);
+  activeSplit = null;
+  activeSplitProgress = 0;
+}
+
+function finalizeSplitPhase() {
+  mondrianRectangles = splitSections.map((section) => createFillPlan(section));
+  mondrianRectangles.sort((a, b) => {
+    if (abs(a.y - b.y) > 0.5) return a.y - b.y;
+    return a.x - b.x;
+  });
+  drawPhase = "fills";
+  currentRectangleIndex = 0;
+}
+
 function drawNextStrokeDistance(section, distanceBudget, singleSegmentMode) {
   if (section.currentLineIndex >= section.lines.length) return 0;
 
@@ -457,48 +496,6 @@ function drawSegmentPortion(segment, fromDistance, toDistance) {
   line(x1, y1, x2, y2);
 }
 
-function drawNextOutlineDistance(distanceBudget, singleSegmentMode) {
-  if (currentOutlineIndex >= outlineSegments.length) return 0;
-
-  let consumed = 0;
-  stroke(...GRID_COLOR);
-  strokeCap(ROUND);
-  strokeJoin(ROUND);
-
-  while (distanceBudget > 0 && currentOutlineIndex < outlineSegments.length) {
-    const segment = outlineSegments[currentOutlineIndex];
-    const segmentLength = segment.length;
-    if (segmentLength <= 0.001) {
-      currentOutlineIndex += 1;
-      currentOutlineProgress = 0;
-      continue;
-    }
-
-    const remainingOnSegment = segmentLength - currentOutlineProgress;
-    if (remainingOnSegment <= 0.001) {
-      currentOutlineIndex += 1;
-      currentOutlineProgress = 0;
-      continue;
-    }
-
-    const step = min(remainingOnSegment, distanceBudget, PIXEL_STEP_DISTANCE);
-    const nextProgress = currentOutlineProgress + step;
-    strokeWeight(max(1.2, borderWeight + random(-0.25, 0.25)));
-    drawSegmentPortion(segment, currentOutlineProgress, nextProgress);
-    currentOutlineProgress = nextProgress;
-    distanceBudget -= step;
-    consumed += step;
-
-    if (currentOutlineProgress >= segmentLength - 0.001) {
-      currentOutlineIndex += 1;
-      currentOutlineProgress = 0;
-      if (singleSegmentMode) break;
-    }
-  }
-
-  return consumed;
-}
-
 function getArea(section) {
   return section.w * section.h;
 }
@@ -510,12 +507,6 @@ function getCompositionMargin() {
 function isSectionShapeValid(section) {
   const ratio = section.w / section.h;
   return ratio >= RECT_RATIO_MIN && ratio <= RECT_RATIO_MAX;
-}
-
-function isSectionFinalValid(section, minArea, maxArea) {
-  const area = getArea(section);
-  if (area < minArea - 0.5 || area > maxArea + 0.5) return false;
-  return isSectionShapeValid(section);
 }
 
 function shuffleValues(values) {

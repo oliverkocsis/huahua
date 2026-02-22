@@ -3,7 +3,7 @@
 ## What Is Drawn
 This sketch creates a Mondrian-like partition inside an inset composition area, then fills each rectangle one-by-one with dense pastel color strokes.
 Each fill stroke is revealed progressively so it looks hand-drawn instead of appearing instantly.
-Rectangle borders are also progressively drawn first, before interior color filling starts.
+Split lines are animated immediately while the partition is being built (no separate precompute-then-outline pass).
 Each sketch picks exactly 3 strong pastel colors: one red shade, one yellow shade, and one blue shade.
 Some rectangles are randomly left white (unfilled).
 The fill is built from many clipped strokes at a random angle between `-60°` and `-30°` to approximate a hand-drawn solid block.
@@ -20,44 +20,30 @@ The full composition is inset from the canvas edges so no rectangle runs edge-to
 - Some rectangles are randomly left white (no interior fill strokes).
 - Fill spacing is fixed inside one rectangle, but differs from rectangle to rectangle.
 - Fill stroke direction is randomized per rectangle in the range `[-60°, -30°]`.
-- Border lines are set to `4x` the filler line width.
+- Split-line borders are animated as each valid split is chosen.
 - Fill spacing bounds are controlled by constants, so density can be tuned centrally.
 - Fill strokes are intentionally thicker than before for stronger color coverage.
-- If a valid split layout cannot be produced after retries, a `5x5` fallback grid is used.
-- Rectangle borders are animated progressively before interior fills.
+- When a section cannot be split further, it is kept as-is and the process continues with other oversized sections.
 
 ## Description And Code Pairs
 
-### 1) Split Until Areas Fit Bounds (With Retry + Fallback)
-Builds an inset composition area first, then keeps splitting only sections that are too large. It retries multiple times and falls back to a fixed grid if needed.
+### 1) Split And Draw Immediately
+Builds an inset composition first, then repeatedly picks the largest splittable oversized section. The chosen split line is drawn immediately, and only then are child sections inserted.
 
 ```js
-for (let attempt = 0; attempt < 120; attempt += 1) {
-  const sections = [root];
-  let failed = false;
-  while (true) {
-    let largestIndex = -1;
-    let largestArea = 0;
-    for (let i = 0; i < sections.length; i += 1) {
-      const area = getArea(sections[i]);
-      if (area > maxArea && area > largestArea) {
-        largestArea = area;
-        largestIndex = i;
-      }
-    }
-    if (largestIndex === -1) break;
-    const split = splitSection(sections[largestIndex], minArea);
-    if (!split) {
-      failed = true;
-      break;
-    }
-    sections.splice(largestIndex, 1, split[0], split[1]);
-  }
-  if (failed) continue;
-  const valid = sections.every((section) => isSectionFinalValid(section, minArea, maxArea));
-  if (valid) return sections;
+if (!activeSplit) {
+  const largestIndex = findLargestSplittableIndex(splitSections, splitMaxArea);
+  const split = splitSection(splitSections[largestIndex], splitMinArea);
+  activeSplit = { sectionIndex: largestIndex, first: split.first, second: split.second, splitLine: split.splitLine };
 }
-return createFallbackGrid(root);
+
+drawSegmentPortion(activeSplit.splitLine, activeSplitProgress, nextProgress);
+
+if (activeSplitProgress >= activeSplit.splitLine.length) {
+  splitSections.splice(activeSplit.sectionIndex, 1, activeSplit.first, activeSplit.second);
+  activeSplit = null;
+  activeSplitProgress = 0;
+}
 ```
 
 ### 2) Constrain Split Geometry And Ratios
@@ -66,15 +52,16 @@ When splitting, the cut position keeps each child above minimum area and inside 
 ```js
 const left = { x: section.x, y: section.y, w: cutX, h: section.h };
 const right = { x: section.x + cutX, y: section.y, w: section.w - cutX, h: section.h };
-if (isSectionShapeValid(left) && isSectionShapeValid(right)) return [left, right];
+if (isSectionShapeValid(left) && isSectionShapeValid(right)) {
+  return { first: left, second: right, splitLine: createSegment(...) };
+}
 ```
 
 ### 3) Build Animated Solid Fill Strokes
-For each rectangle, choose one spacing value, one random angle in `[-60°, -30°]`, and one fill style from `{white, black, active sketch colors}`, then generate clipped strokes unless the rectangle is white.
+After splitting is complete, each final section gets one spacing value, one random angle in `[-60°, -30°]`, and one fill style from `{white, black, active sketch colors}`.
 
 ```js
-sketchFillPalette = buildSketchFillPalette(); // one red, one yellow, one blue
-const fillStyle = pickRectangleFillStyle();   // white, black, or one of those 3
+const fillStyle = pickRectangleFillStyle();
 const spacingBounds = getFillSpacingBounds();
 const lineSpacing = random(spacingBounds.min, spacingBounds.max);
 const fillAngleDegrees = random(FILL_ANGLE_MIN_DEGREES, FILL_ANGLE_MAX_DEGREES);
@@ -85,33 +72,26 @@ const lines = fillStyle.skipFill ? [] : createSolidFillStrokes(section, lineSpac
 Every fill stroke is revealed in small distance chunks. Stroke color and weight are jittered slightly so the rectangle reads as hand-colored.
 
 ```js
-stroke(
-  section.fillColor[0] + random(-8, 8),
-  section.fillColor[1] + random(-8, 8),
-  section.fillColor[2] + random(-8, 8),
-  section.fillColor[3] + random(-16, 16)
-);
-strokeWeight(max(1.8, fillerLineWeight * FILL_STROKE_WEIGHT_MULTIPLIER + random(-0.20, 0.35)));
+const step = min(remainingOnLine, distanceBudget, PIXEL_STEP_DISTANCE);
+const nextProgress = section.currentLineProgress + step;
 drawSegmentPortion(segment, section.currentLineProgress, nextProgress);
 ```
 
-### 5) Animate Borders Before Fills
-Uses two phases: first progressively draws rectangle borders, then progressively fills interiors.
+### 5) Speed Control
+The sketch uses the shared app speed profile and then applies a pixel-step cap so drawing remains incremental.
 
 ```js
-if (drawPhase === "outlines") {
-  const outlineConsumed = drawNextOutlineDistance(remainingDistance);
-  if (outlineConsumed === 0) drawPhase = "fills";
-}
+let remainingDistance = getDrawDistancePerFrame();
+if (isHumanSpeed) remainingDistance = min(remainingDistance, PIXEL_STEP_DISTANCE * HUMAN_PIXEL_STEPS_PER_FRAME);
+const step = min(remainingOnLine, distanceBudget, PIXEL_STEP_DISTANCE);
 ```
 
-### 6) Respect Main App Speed Control
-The sketch reads `window.HUAHUA_APP.speed` and maps it to drawn distance per frame.
+### 6) Fill Phase Starts After Split Phase
+When no more valid oversized splits exist, split animation ends and interior fill rendering begins.
 
 ```js
-if (speedMode === 1) return max(8, scale * 0.02);
-if (speedMode === 2) return max(24, scale * 0.055);
-let burst = max(54, scale * 0.12);
-if (random() < 0.35) burst += max(28, scale * random(0.08, 0.2));
-return burst;
+if (drawPhase === "splits" && drawNextSplitDistance(...) === 0) {
+  finalizeSplitPhase();
+  drawPhase = "fills";
+}
 ```
