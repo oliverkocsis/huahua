@@ -22,6 +22,10 @@ const FILL_SPACING_MIN_SCALE = 0.0032;
 const FILL_SPACING_MAX_SCALE = 0.0058;
 const PIXEL_STEP_DISTANCE = 2;
 const HUMAN_PIXEL_STEPS_PER_FRAME = 4;
+const MAX_SPLIT_ATTEMPTS = 120;
+const SPLIT_CUT_ATTEMPTS = 36;
+const GEOMETRY_EPSILON = 0.001;
+const CLIP_EPSILON = 0.000001;
 const WHITE_RECTANGLE_PROBABILITY = 0.40;
 const BLACK_FILL_PROBABILITY = 0.05;
 const WHITE_FILL_COLOR = [250, 249, 245, 230];
@@ -56,6 +60,9 @@ let activeSplitProgress = 0;
 let drawPhase = "splits";
 let isComplete = false;
 let sketchFillPalette = [];
+let splitPhaseComplete = false;
+let splitAttemptCount = 0;
+let splitComposition = null;
 
 function setup() {
   createCanvas(windowWidth, windowHeight);
@@ -78,10 +85,14 @@ function draw() {
         if (isHumanSpeed) break;
         continue;
       }
-      finalizeSplitPhase();
-      continue;
+      if (splitPhaseComplete) {
+        finalizeSplitPhase();
+        continue;
+      }
+      break;
     }
 
+    if (drawPhase !== "fills") break;
     if (currentRectangleIndex >= mondrianRectangles.length) break;
 
     const section = mondrianRectangles[currentRectangleIndex];
@@ -109,9 +120,12 @@ function buildMondrianComposition() {
   const compositionArea = composition.w * composition.h;
   splitMinArea = compositionArea * AREA_MIN_RATIO;
   splitMaxArea = compositionArea * AREA_MAX_RATIO;
-  splitSections = [composition];
+  splitComposition = toSplitSection(composition);
+  splitSections = [toSplitSection(splitComposition)];
   activeSplit = null;
   activeSplitProgress = 0;
+  splitPhaseComplete = false;
+  splitAttemptCount = 0;
   drawPhase = "splits";
   mondrianRectangles = [];
   currentRectangleIndex = 0;
@@ -148,7 +162,7 @@ function splitWithOrientation(section, minArea, orientation) {
     const maxWidth = section.w - minWidth;
     if (maxWidth <= minWidth) return null;
 
-    for (let attempt = 0; attempt < 36; attempt += 1) {
+    for (let attempt = 0; attempt < SPLIT_CUT_ATTEMPTS; attempt += 1) {
       const cutX = random(minWidth, maxWidth);
       const left = { x: section.x, y: section.y, w: cutX, h: section.h };
       const right = { x: section.x + cutX, y: section.y, w: section.w - cutX, h: section.h };
@@ -167,7 +181,7 @@ function splitWithOrientation(section, minArea, orientation) {
   const maxHeight = section.h - minHeight;
   if (maxHeight <= minHeight) return null;
 
-  for (let attempt = 0; attempt < 36; attempt += 1) {
+  for (let attempt = 0; attempt < SPLIT_CUT_ATTEMPTS; attempt += 1) {
     const cutY = random(minHeight, maxHeight);
     const top = { x: section.x, y: section.y, w: section.w, h: cutY };
     const bottom = { x: section.x, y: section.y + cutY, w: section.w, h: section.h - cutY };
@@ -181,6 +195,53 @@ function splitWithOrientation(section, minArea, orientation) {
   }
 
   return null;
+}
+
+function createFallbackGrid(bounds, minArea, maxArea) {
+  const area = bounds.w * bounds.h;
+  const minCells = max(1, ceil(area / maxArea - 0.0001));
+  const maxCells = max(minCells, floor(area / minArea + 0.0001));
+  const dimensions = chooseFallbackGridDimensions(bounds, minCells, maxCells);
+  const rows = dimensions.rows;
+  const columns = dimensions.columns;
+  const cellWidth = bounds.w / columns;
+  const cellHeight = bounds.h / rows;
+  const sections = [];
+  for (let row = 0; row < rows; row += 1) {
+    for (let column = 0; column < columns; column += 1) {
+      sections.push({
+        x: bounds.x + column * cellWidth,
+        y: bounds.y + row * cellHeight,
+        w: cellWidth,
+        h: cellHeight,
+      });
+    }
+  }
+  return sections;
+}
+
+function chooseFallbackGridDimensions(bounds, minCells, maxCells) {
+  const targetCells = constrain(25, minCells, maxCells);
+  let best = null;
+
+  for (let rows = 1; rows <= maxCells; rows += 1) {
+    for (let columns = 1; columns <= maxCells; columns += 1) {
+      const cellCount = rows * columns;
+      if (cellCount < minCells || cellCount > maxCells) continue;
+
+      const cellRatio = (bounds.w / columns) / (bounds.h / rows);
+      if (cellRatio < RECT_RATIO_MIN || cellRatio > RECT_RATIO_MAX) continue;
+
+      const score = abs(cellCount - targetCells) * 10 + abs(Math.log(cellRatio));
+      if (!best || score < best.score) {
+        best = { rows, columns, score };
+      }
+    }
+  }
+
+  if (best) return best;
+
+  return { rows: 5, columns: 5 };
 }
 
 function createFillPlan(section) {
@@ -268,7 +329,7 @@ function createSolidFillStrokes(section, spacing, inset, angleDegrees) {
       const endX = clipped.x1 <= clipped.x2 ? clipped.x2 : clipped.x1;
       const endY = clipped.x1 <= clipped.x2 ? clipped.y2 : clipped.y1;
       const segment = createSegment(startX, startY, endX, endY);
-      if (segment.length > 0.001) lines.push(segment);
+      if (segment.length > GEOMETRY_EPSILON) lines.push(segment);
     }
   }
   lines.sort((a, b) => {
@@ -298,7 +359,7 @@ function clipSegmentToRect(x1, y1, x2, y2, x, y, w, h) {
   let t1 = 1;
 
   for (let i = 0; i < 4; i += 1) {
-    if (abs(p[i]) < 0.000001) {
+    if (abs(p[i]) < CLIP_EPSILON) {
       if (q[i] < 0) return null;
       continue;
     }
@@ -354,20 +415,26 @@ function drawNextSplitDistance(distanceBudget, singleSegmentMode) {
 
   while (distanceBudget > 0) {
     if (!activeSplit) {
-      const prepared = prepareNextSplit();
-      if (!prepared) break;
+      const splitState = prepareNextSplit();
+      if (splitState === "complete") {
+        splitPhaseComplete = true;
+        break;
+      }
+      if (splitState !== "ready") {
+        break;
+      }
     }
 
     const segment = activeSplit.splitLine;
     const segmentLength = segment.length;
-    if (segmentLength <= 0.001) {
+    if (segmentLength <= GEOMETRY_EPSILON) {
       applyActiveSplit();
       if (singleSegmentMode) break;
       continue;
     }
 
     const remainingOnSegment = segmentLength - activeSplitProgress;
-    if (remainingOnSegment <= 0.001) {
+    if (remainingOnSegment <= GEOMETRY_EPSILON) {
       applyActiveSplit();
       if (singleSegmentMode) break;
       continue;
@@ -381,7 +448,7 @@ function drawNextSplitDistance(distanceBudget, singleSegmentMode) {
     distanceBudget -= step;
     consumed += step;
 
-    if (activeSplitProgress >= segmentLength - 0.001) {
+    if (activeSplitProgress >= segmentLength - GEOMETRY_EPSILON) {
       applyActiveSplit();
       if (singleSegmentMode) break;
     }
@@ -391,34 +458,37 @@ function drawNextSplitDistance(distanceBudget, singleSegmentMode) {
 }
 
 function prepareNextSplit() {
-  while (true) {
-    const largestIndex = findLargestSplittableIndex(splitSections, splitMaxArea);
-    if (largestIndex === -1) return false;
+  const maxSearchSteps = getSplitSearchStepsPerFrame();
+  for (let step = 0; step < maxSearchSteps; step += 1) {
+    const largestIndex = findLargestOversizedIndex(splitSections, splitMaxArea);
+    if (largestIndex === -1) return "complete";
 
-    const candidate = splitSections[largestIndex];
-    const split = splitSection(candidate, splitMinArea);
-    if (!split) {
-      candidate.canSplit = false;
-      continue;
+    const split = splitSection(splitSections[largestIndex], splitMinArea);
+    if (split) {
+      activeSplit = {
+        sectionIndex: largestIndex,
+        first: toSplitSection(split.first),
+        second: toSplitSection(split.second),
+        splitLine: split.splitLine,
+      };
+      activeSplitProgress = 0;
+      return "ready";
     }
 
-    activeSplit = {
-      sectionIndex: largestIndex,
-      first: split.first,
-      second: split.second,
-      splitLine: split.splitLine,
-    };
-    activeSplitProgress = 0;
-    return true;
+    if (!restartSplitAttempt()) {
+      splitSections = createFallbackGrid(splitComposition, splitMinArea, splitMaxArea);
+      return "complete";
+    }
+    return "pending";
   }
+  return "pending";
 }
 
-function findLargestSplittableIndex(sections, maxArea) {
+function findLargestOversizedIndex(sections, maxArea) {
   let largestIndex = -1;
   let largestArea = 0;
   for (let i = 0; i < sections.length; i += 1) {
     const section = sections[i];
-    if (section.canSplit === false) continue;
     const area = getArea(section);
     if (area > maxArea && area > largestArea) {
       largestArea = area;
@@ -428,15 +498,41 @@ function findLargestSplittableIndex(sections, maxArea) {
   return largestIndex;
 }
 
+function restartSplitAttempt() {
+  splitAttemptCount += 1;
+  if (splitAttemptCount >= MAX_SPLIT_ATTEMPTS) return false;
+  splitSections = [toSplitSection(splitComposition)];
+  activeSplit = null;
+  activeSplitProgress = 0;
+  splitPhaseComplete = false;
+  return true;
+}
+
+function getSplitSearchStepsPerFrame() {
+  const speedMode = getMainSpeedMode();
+  if (speedMode === 1) return 1;
+  if (speedMode === 2) return 2;
+  return 4;
+}
+
 function applyActiveSplit() {
   if (!activeSplit) return;
-  splitSections.splice(activeSplit.sectionIndex, 1, activeSplit.first, activeSplit.second);
+  splitSections.splice(
+    activeSplit.sectionIndex,
+    1,
+    toSplitSection(activeSplit.first),
+    toSplitSection(activeSplit.second)
+  );
   activeSplit = null;
   activeSplitProgress = 0;
 }
 
 function finalizeSplitPhase() {
-  mondrianRectangles = splitSections.map((section) => createFillPlan(section));
+  const allSectionsValid = splitSections.every((section) => isSectionFinalValid(section, splitMinArea, splitMaxArea));
+  if (!allSectionsValid) {
+    splitSections = createFallbackGrid(splitComposition, splitMinArea, splitMaxArea);
+  }
+  mondrianRectangles = buildDrawableRectanglesFromSections(splitSections);
   mondrianRectangles.sort((a, b) => {
     if (abs(a.y - b.y) > 0.5) return a.y - b.y;
     return a.x - b.x;
@@ -454,14 +550,14 @@ function drawNextStrokeDistance(section, distanceBudget, singleSegmentMode) {
   while (distanceBudget > 0 && section.currentLineIndex < section.lines.length) {
     const segment = section.lines[section.currentLineIndex];
     const segmentLength = segment.length;
-    if (segmentLength <= 0.001) {
+    if (segmentLength <= GEOMETRY_EPSILON) {
       section.currentLineIndex += 1;
       section.currentLineProgress = 0;
       continue;
     }
 
     const remainingOnLine = segmentLength - section.currentLineProgress;
-    if (remainingOnLine <= 0.001) {
+    if (remainingOnLine <= GEOMETRY_EPSILON) {
       section.currentLineIndex += 1;
       section.currentLineProgress = 0;
       continue;
@@ -481,7 +577,7 @@ function drawNextStrokeDistance(section, distanceBudget, singleSegmentMode) {
     distanceBudget -= step;
     consumed += step;
 
-    if (section.currentLineProgress >= segmentLength - 0.001) {
+    if (section.currentLineProgress >= segmentLength - GEOMETRY_EPSILON) {
       section.currentLineIndex += 1;
       section.currentLineProgress = 0;
       if (singleSegmentMode) break;
@@ -507,6 +603,19 @@ function getArea(section) {
   return section.w * section.h;
 }
 
+function toSplitSection(section) {
+  return {
+    x: section.x,
+    y: section.y,
+    w: section.w,
+    h: section.h,
+  };
+}
+
+function buildDrawableRectanglesFromSections(sections) {
+  return sections.map((section) => createFillPlan(toSplitSection(section)));
+}
+
 function getCompositionMargin() {
   return constrain(min(width, height) * COMPOSITION_MARGIN_RATIO, COMPOSITION_MARGIN_MIN, COMPOSITION_MARGIN_MAX);
 }
@@ -514,6 +623,12 @@ function getCompositionMargin() {
 function isSectionShapeValid(section) {
   const ratio = section.w / section.h;
   return ratio >= RECT_RATIO_MIN && ratio <= RECT_RATIO_MAX;
+}
+
+function isSectionFinalValid(section, minArea, maxArea) {
+  const area = getArea(section);
+  if (area < minArea - 0.5 || area > maxArea + 0.5) return false;
+  return isSectionShapeValid(section);
 }
 
 function shuffleValues(values) {

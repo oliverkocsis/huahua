@@ -1,99 +1,112 @@
 # Mondrian Sketch
 
-## What Is Drawn
-This sketch creates a Mondrian-like partition inside an inset composition area, then fills each rectangle one-by-one with dense pastel color strokes.
-Each fill stroke is revealed progressively so it looks hand-drawn instead of appearing instantly.
-Split lines are animated immediately while the partition is being built (no separate precompute-then-outline pass).
-Each sketch picks exactly 3 strong pastel colors: one red shade, one yellow shade, and one blue shade.
-Some rectangles are randomly left white (unfilled).
-The fill is built from many clipped strokes at a random angle between `-60°` and `-30°` to approximate a hand-drawn solid block.
-Fill lines are ordered from the top-left region first, but line direction alternates back-and-forth (serpentine) to mimic hand movement while filling.
-Rectangles are also processed from top-left toward bottom-right across the composition.
-The full composition is inset from the canvas edges so no rectangle runs edge-to-edge on the viewport.
+## Original Drawing Objective (Artist-Facing)
+Create a Mondrian-inspired composition that feels constructed by hand instead of generated instantly.
+The image should read as a bold rectilinear layout with thick structural dividers, then gradually fill with textured color hatching.
+Color should stay in a Mondrian family: one red mood, one yellow mood, one blue mood, plus occasional black accents and intentional white gaps.
+Movement should feel human: split lines appear as they are decided, and fill strokes sweep back-and-forth as if a hand is changing direction between passes.
 
-## Rules Used
-- Rectangle area is constrained to `1%` to `5%` of the composition area.
-- Oversized rectangles are recursively split until all sections fit the area bounds.
-- Rectangle width/height ratio is constrained by min/max bounds to avoid extreme strips.
-- Each sketch chooses exactly 3 active colors: red shade + yellow shade + blue shade.
-- Rectangle fills are sampled from: those 3 colors + black.
-- Some rectangles are randomly left white (no interior fill strokes).
-- Fill spacing is fixed inside one rectangle, but differs from rectangle to rectangle.
-- Fill stroke direction is randomized per rectangle in the range `[-60°, -30°]`.
-- Consecutive fill lines alternate direction to create back-and-forth filling motion.
-- Split-line borders are animated as each valid split is chosen.
-- Fill spacing bounds are controlled by constants, so density can be tuned centrally.
-- Fill strokes are intentionally thicker than before for stronger color coverage.
-- When a section cannot be split further, it is kept as-is and the process continues with other oversized sections.
+## Parameter Guide (Value-Agnostic)
+Exact active values live in constants at the top of `mondriaan/sketch.js`. Tune there; keep this guide behavior-focused.
 
-## Description And Code Pairs
+- Composition framing:
+  `COMPOSITION_MARGIN_RATIO`, `COMPOSITION_MARGIN_MIN`, `COMPOSITION_MARGIN_MAX` control how inset the drawing sits from the canvas edges.
+- Split constraints:
+  `AREA_MIN_RATIO`, `AREA_MAX_RATIO`, `RECT_RATIO_MIN`, `RECT_RATIO_MAX` control target rectangle size band and allowed shape proportions.
+- Split search and resilience:
+  `SPLIT_CUT_ATTEMPTS`, `MAX_SPLIT_ATTEMPTS`, and `getSplitSearchStepsPerFrame()` control how aggressively split candidates are searched each frame and how many full restarts are allowed before fallback.
+- Fill orientation and density:
+  `FILL_ANGLE_MIN_DEGREES`, `FILL_ANGLE_MAX_DEGREES`, `FILL_SPACING_MIN_PX`, `FILL_SPACING_MAX_PX`, `FILL_SPACING_MIN_SCALE`, `FILL_SPACING_MAX_SCALE` control hatch direction and spacing density.
+- Fill weight and texture:
+  `FILL_STROKE_WEIGHT_MULTIPLIER`, `PIXEL_STEP_DISTANCE`, `HUMAN_PIXEL_STEPS_PER_FRAME`, `GEOMETRY_EPSILON`, `CLIP_EPSILON` control stroke thickness and progressive reveal granularity.
+- Color system:
+  `RED_PASTEL_SHADES`, `YELLOW_PASTEL_SHADES`, `BLUE_PASTEL_SHADES`, `WHITE_RECTANGLE_PROBABILITY`, `BLACK_FILL_PROBABILITY`, `WHITE_FILL_COLOR`, `BLACK_FILL_COLOR` control palette behavior.
+- Line and background appearance:
+  `GRID_COLOR`, `BG_COLOR` control the base paper tone and structural line tone.
 
-### 1) Split And Draw Immediately
-Builds an inset composition first, then repeatedly picks the largest splittable oversized section. The chosen split line is drawn immediately, and only then are child sections inserted.
+## Overall Drawing Strategy (Developer-Facing)
+1. Initialize composition bounds and split state.
+2. Animate recursive splitting immediately, drawing each chosen split line segment as it progresses.
+3. Keep split state geometry-only until partitioning is done.
+4. Convert final sections into drawable fill plans (line list + per-rectangle drawing state).
+5. Animate fill lines progressively with fixed per-segment step distance and serpentine direction.
+6. Stop rendering when all rectangles are complete; restart on click or resize.
+
+## Detailed Steps + Reusable Snippets (Developer-Facing)
+### 1) Build Clean Split State
+Start from one inset root section and store only geometry in split data.
+
+```js
+function buildMondrianComposition() {
+  const composition = getCompositionBounds();
+  splitComposition = toSplitSection(composition);
+  splitSections = [toSplitSection(splitComposition)];
+  activeSplit = null;
+  activeSplitProgress = 0;
+  splitPhaseComplete = false;
+  splitAttemptCount = 0;
+  drawPhase = "splits";
+}
+```
+
+### 2) Animate Splits While Deciding Them
+Pick the largest oversized section, find a valid cut, and draw that cut progressively before committing children.
 
 ```js
 if (!activeSplit) {
-  const largestIndex = findLargestSplittableIndex(splitSections, splitMaxArea);
-  const split = splitSection(splitSections[largestIndex], splitMinArea);
-  activeSplit = { sectionIndex: largestIndex, first: split.first, second: split.second, splitLine: split.splitLine };
+  const splitState = prepareNextSplit();
+  if (splitState === "complete") splitPhaseComplete = true;
 }
 
-drawSegmentPortion(activeSplit.splitLine, activeSplitProgress, nextProgress);
-
-if (activeSplitProgress >= activeSplit.splitLine.length) {
-  splitSections.splice(activeSplit.sectionIndex, 1, activeSplit.first, activeSplit.second);
-  activeSplit = null;
-  activeSplitProgress = 0;
-}
+const step = min(remainingOnSegment, distanceBudget, PIXEL_STEP_DISTANCE);
+drawSegmentPortion(segment, activeSplitProgress, activeSplitProgress + step);
 ```
 
-### 2) Constrain Split Geometry And Ratios
-When splitting, the cut position keeps each child above minimum area and inside aspect-ratio limits.
+### 3) Enforce Strict Split Rules With Recovery
+If a candidate cannot be split, restart from root; after bounded retries, fall back to a valid grid.
 
 ```js
-const left = { x: section.x, y: section.y, w: cutX, h: section.h };
-const right = { x: section.x + cutX, y: section.y, w: section.w - cutX, h: section.h };
-if (isSectionShapeValid(left) && isSectionShapeValid(right)) {
-  return { first: left, second: right, splitLine: createSegment(...) };
+const split = splitSection(splitSections[largestIndex], splitMinArea);
+if (!split) {
+  if (!restartSplitAttempt()) {
+    splitSections = createFallbackGrid(splitComposition, splitMinArea, splitMaxArea);
+    return "complete";
+  }
+  return "pending";
 }
 ```
 
-### 3) Build Animated Solid Fill Strokes
-After splitting is complete, each final section gets one spacing value, one random angle in `[-60°, -30°]`, and one fill style from `{white, black, active sketch colors}`.
+### 4) Convert Geometry To Drawable Plans
+Only after splitting finishes, attach fill metadata and progress state.
 
 ```js
-const fillStyle = pickRectangleFillStyle();
-const spacingBounds = getFillSpacingBounds();
-const lineSpacing = random(spacingBounds.min, spacingBounds.max);
-const fillAngleDegrees = random(FILL_ANGLE_MIN_DEGREES, FILL_ANGLE_MAX_DEGREES);
-const lines = fillStyle.skipFill ? [] : createSolidFillStrokes(section, lineSpacing, inset, fillAngleDegrees);
-// createSolidFillStrokes flips every second line direction for serpentine drawing
+function finalizeSplitPhase() {
+  if (!splitSections.every((s) => isSectionFinalValid(s, splitMinArea, splitMaxArea))) {
+    splitSections = createFallbackGrid(splitComposition, splitMinArea, splitMaxArea);
+  }
+  mondrianRectangles = buildDrawableRectanglesFromSections(splitSections);
+  drawPhase = "fills";
+}
 ```
 
-### 4) Draw Color Strokes Progressively
-Every fill stroke is revealed in small distance chunks. Stroke color and weight are jittered slightly so the rectangle reads as hand-colored.
+### 5) Build Hand-Style Fill Strokes
+Generate clipped hatch lines at a per-rectangle angle; reverse every second line for back-and-forth movement.
 
 ```js
-const step = min(remainingOnLine, distanceBudget, PIXEL_STEP_DISTANCE);
-const nextProgress = section.currentLineProgress + step;
-drawSegmentPortion(segment, section.currentLineProgress, nextProgress);
+const lines = createSolidFillStrokes(section, lineSpacing, inset, fillAngleDegrees);
+for (let i = 1; i < lines.length; i += 2) {
+  lines[i] = reverseSegmentDirection(lines[i]);
+}
 ```
 
-### 5) Speed Control
-The sketch uses the shared app speed profile and then applies a pixel-step cap so drawing remains incremental.
+### 6) Keep 1x Mode Progressively Drawn
+Use distance budgets and fixed step distance so lines reveal over time instead of appearing at once.
 
 ```js
 let remainingDistance = getDrawDistancePerFrame();
-if (isHumanSpeed) remainingDistance = min(remainingDistance, PIXEL_STEP_DISTANCE * HUMAN_PIXEL_STEPS_PER_FRAME);
-const step = min(remainingOnLine, distanceBudget, PIXEL_STEP_DISTANCE);
-```
-
-### 6) Fill Phase Starts After Split Phase
-When no more valid oversized splits exist, split animation ends and interior fill rendering begins.
-
-```js
-if (drawPhase === "splits" && drawNextSplitDistance(...) === 0) {
-  finalizeSplitPhase();
-  drawPhase = "fills";
+if (isHumanSpeed) {
+  remainingDistance = min(remainingDistance, PIXEL_STEP_DISTANCE * HUMAN_PIXEL_STEPS_PER_FRAME);
 }
+const step = min(remainingOnLine, distanceBudget, PIXEL_STEP_DISTANCE);
+drawSegmentPortion(segment, section.currentLineProgress, section.currentLineProgress + step);
 ```
